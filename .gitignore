@@ -433,3 +433,10 @@ public/bundle.js
 
 # Local secrets, injected at build time. Never commit.
 dot.local.json
+
+# Web build staged into the Android project at CI time
+android/app/src/main/assets/
+android/.gradle/
+android/build/
+android/app/build/
+android/local.properties
