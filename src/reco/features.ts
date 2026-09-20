@@ -56,6 +56,8 @@ export function contextBucket(date: Date = new Date()): number {
 }
 
 const WEIGHT = {
+  kind: 0.7,
+  kindTag: 0.5,
   tag: 1.0,
   genre: 0.6,
   mood: 0.5,
@@ -110,6 +112,18 @@ export function featurize(track: Track, bucket: number): SparseVec {
   if (track.mood) add('mood:' + normalizeTag(track.mood), WEIGHT.mood);
   if (track.artistId) add('artist:' + track.artistId, WEIGHT.artist);
   else if (track.artist) add('artist:' + normalizeTag(track.artist), WEIGHT.artist);
+
+  // Surface is a feature rather than a separate model. Three models would each
+  // see a third of the data; one model with a surface feature lets taste carry
+  // across Music, Shorts and Videos while still learning that a tag can land
+  // differently on each — short phonk edits and long ambient videos are not the
+  // same preference.
+  if (track.kind) {
+    add('kind:' + track.kind, WEIGHT.kind);
+    for (const tag of tags.slice(0, TAG_CONTEXT_LIMIT)) {
+      add('kindtag:' + track.kind + ':' + tag, WEIGHT.kindTag);
+    }
+  }
 
   add('dur:' + durationBucket(track.duration), WEIGHT.duration);
   add('pop:' + popularityBucket(track.playCount), WEIGHT.popularity);

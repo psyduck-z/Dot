@@ -39,6 +39,11 @@ export interface Track {
    * filtered later, rather than only at the moment they were fetched.
    */
   madeForKids?: boolean;
+  /**
+   * Which surface this belongs on. Decided locally by the source so the UI
+   * never has to re-derive it, and so three tabs cost no extra API calls.
+   */
+  kind?: 'music' | 'short' | 'video';
 }
 
 export interface SourceCapabilities {
@@ -113,8 +118,14 @@ export interface Playlist {
 }
 
 export interface Prefs {
-  /** Tags the user opted into up front, used to seed the model. */
-  seedTags: string[];
+  /**
+   * Tags the user opted into, kept per surface. Music and Shorts are genuinely
+   * different appetites — the phonk edits worth watching for thirty seconds
+   * are not the albums worth playing for an hour — so one shared list made
+   * both feeds worse.
+   */
+  musicTags: string[];
+  shortsTags: string[];
   seedArtists: string[];
   /** 0..1. Surfaces the explore/exploit tradeoff directly to the user. */
   discovery: number;
@@ -133,10 +144,28 @@ export interface Prefs {
    * domain types free of any dependency on a particular source.
    */
   filterLevel: 'off' | 'normal' | 'strict';
+  /** Public YouTube playlists added by the user, with the tags they assigned. */
+  youtubePlaylists: SavedPlaylist[];
+  /** Captions are off by default; this puts them back under user control. */
+  captionsEnabled: boolean;
+}
+
+export interface SavedPlaylist {
+  /** YouTube playlist id, e.g. PLxxxx or OLAK5uy_xxxx. */
+  id: string;
+  label: string;
+  /**
+   * User-assigned tags. A keyless playlist carries no per-track metadata, so
+   * these are the recommender's only signal for everything inside it.
+   */
+  tags: string[];
+  /** How many video ids the player reported, for the Library listing. */
+  count: number;
 }
 
 export const DEFAULT_PREFS: Prefs = {
-  seedTags: [],
+  musicTags: [],
+  shortsTags: [],
   seedArtists: [],
   discovery: 0.2,
   volume: 0.8,
@@ -144,4 +173,6 @@ export const DEFAULT_PREFS: Prefs = {
   cacheLimitMb: 256,
   youtubeApiKey: '',
   filterLevel: 'normal',
+  youtubePlaylists: [],
+  captionsEnabled: false,
 };

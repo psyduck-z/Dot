@@ -41,6 +41,7 @@ const KEY = {
   liked: 'dot.likedtracks.v1',
   ytCatalog: 'dot.ytcatalog.v1',
   quota: 'dot.quota.v1',
+  hidden: 'dot.hidden.v1',
 } as const;
 
 /** Keeps storage bounded; also the window used for repeat suppression. */
@@ -92,10 +93,17 @@ export function saveModel(model: TasteModel): void {
 }
 
 export function loadPrefs(): Prefs {
-  const stored = read<Partial<Prefs>>(KEY.prefs, {});
+  const stored = read<Partial<Prefs> & { seedTags?: string[] }>(KEY.prefs, {});
   // Merge rather than replace, so a prefs shape added later gets a default
   // instead of undefined.
-  return { ...DEFAULT_PREFS, ...stored };
+  const merged = { ...DEFAULT_PREFS, ...stored };
+
+  // `seedTags` became `musicTags` when Shorts got their own list. Carry the
+  // old value over rather than silently wiping someone's picks.
+  if (merged.musicTags.length === 0 && Array.isArray(stored.seedTags)) {
+    merged.musicTags = stored.seedTags;
+  }
+  return merged;
 }
 
 export function savePrefs(prefs: Prefs): void {
@@ -172,6 +180,26 @@ export function removeLikedTrack(id: TrackId): Track[] {
   const liked = loadLikedTracks().filter((t) => t.id !== id);
   write(KEY.liked, liked);
   return liked;
+}
+
+/**
+ * Tracks the user asked never to see again. Kept separate from play history,
+ * which expires — this list does not, because "don't show me this" is a
+ * standing instruction rather than a recent event.
+ */
+export function loadHidden(): Set<TrackId> {
+  return new Set(read<TrackId[]>(KEY.hidden, []));
+}
+
+export function hideTrack(id: TrackId): Set<TrackId> {
+  const hidden = loadHidden();
+  hidden.add(id);
+  write(KEY.hidden, Array.from(hidden));
+  return hidden;
+}
+
+export function unhideAll(): void {
+  write(KEY.hidden, []);
 }
 
 export function loadPlaylists(): Playlist[] {

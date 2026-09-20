@@ -357,6 +357,87 @@ export function classify(input: FilterInput): Classification {
   return { score, hits };
 }
 
+/**
+ * Markers that a page is a released recording rather than a video about music.
+ *
+ * Deliberately excludes genre names. "Phonk" tells you the subject is music,
+ * not that the upload *is* a track — "Top 5 phonk songs of the month" is a
+ * countdown video. Only release and production conventions are counted.
+ */
+const RELEASE_MARKERS: readonly string[] = [
+  'official audio',
+  'official video',
+  'official music video',
+  'lyric video',
+  'lyrics',
+  'slowed',
+  'reverb',
+  'bass boosted',
+  'bassboosted',
+  'sped up',
+  'nightcore',
+  'remix',
+  'bootleg',
+  'mixtape',
+  'instrumental',
+  'extended mix',
+  'club mix',
+  'radio edit',
+  'feat.',
+  ' ft.',
+  'prod.',
+  'prod by',
+  'type beat',
+  'acoustic',
+  'live session',
+  'full album',
+];
+
+/** Formats that discuss music instead of being it. */
+const ABOUT_MUSIC: readonly string[] = [
+  'top 5',
+  'top 10',
+  'top 20',
+  'top 50',
+  'best ',
+  'worst ',
+  'ranking',
+  'ranked',
+  'tier list',
+  'explained',
+  'breakdown',
+  'documentary',
+  'the story of',
+  'history of',
+  'review',
+  'reacting',
+  'first time hearing',
+];
+
+/**
+ * How strongly a track reads as an actual recording, as a positive number.
+ *
+ * Used to sort music apart from ordinary videos when the platform's own
+ * category is missing or wrong. Distinct from the children's filter's signal
+ * table, which counts genre words too — there, "phonk" is decisive evidence
+ * that something is not a nursery rhyme; here it says nothing about whether
+ * the upload is a track or a video discussing tracks.
+ */
+export function musicScore(input: FilterInput): number {
+  const text = normalize(input.title + ' ' + input.artist + ' ' + (input.tags ?? []).join(' '));
+  let score = 0;
+  for (const marker of RELEASE_MARKERS) {
+    if (text.indexOf(marker) >= 0) score += 6;
+  }
+  for (const phrase of ABOUT_MUSIC) {
+    if (text.indexOf(phrase) >= 0) score -= 6;
+  }
+  for (const phrase of NON_MUSIC_PHRASES) {
+    if (text.indexOf(phrase) >= 0) score -= 6;
+  }
+  return score;
+}
+
 export function looksMusical(input: FilterInput): boolean {
   const text = normalize(input.title + ' ' + input.artist + ' ' + (input.tags ?? []).join(' '));
   return MUSIC_SIGNALS.some((s) => text.indexOf(s.match) >= 0);

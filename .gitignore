@@ -430,3 +430,6 @@ FodyWeavers.xsd
 
 # Build output
 public/bundle.js
+
+# Local secrets, injected at build time. Never commit.
+dot.local.json

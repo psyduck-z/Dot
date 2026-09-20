@@ -10,7 +10,7 @@
  * position and audio survive navigation.
  */
 
-import { YouTubeSource } from './sources/youtube.ts';
+import { YouTubeSource, parseYouTubeInput } from './sources/youtube.ts';
 import { YouTubeEngine } from './playback/youtube.ts';
 import { Player } from './player.ts';
 import { TasteModel, labelFor } from './reco/model.ts';
@@ -19,6 +19,7 @@ import { contextBucket, featurize, hashKey, normalizeTag } from './reco/features
 import * as store from './store.ts';
 import { button, clear, el, formatTime, paintArt, tintFor } from './ui/dom.ts';
 import type { MusicSource, PlayEvent, Prefs, Track, TrackId } from './types.ts';
+import type { TrackKind } from './sources/kind.ts';
 
 /** Offered during onboarding and on the Search browse grid. Tags, not genres —
  *  the catalogues bury the useful descriptor in free-text tags. */
@@ -31,10 +32,38 @@ const SEED_TAGS = [
   'classical', 'piano', 'folk', 'reggae', 'afrobeat',
 ];
 
+/**
+ * Shorts are browsed by subject, not by genre. Music tags describe what a
+ * track sounds like; a Shorts feed is about what it is *of*, so the two lists
+ * share nothing.
+ */
+const SHORT_TOPICS = [
+  'electronics', 'tech', 'devices', 'gadgets', 'pc build',
+  'hacking', 'coding', 'ai', 'robotics', 'drones',
+  'cars', 'motorbikes', 'racing', 'engineering',
+  'gaming', 'speedrun', 'minecraft', 'fps',
+  'football', 'basketball', 'skating', 'parkour', 'gym',
+  'anime', 'memes', 'comedy', 'magic',
+  'cooking', 'diy', 'science', 'space', 'nature', 'animals',
+  'sneakers', 'fashion', 'travel', 'art',
+];
+
 const QUEUE_TARGET = 20;
+/**
+ * Candidates below this and the feed reaches for the network. Above it, the
+ * local catalogue is wide enough for the diversity constraints to work with.
+ */
+const CANDIDATE_FLOOR = 60;
 const QUEUE_LOW_WATER = 5;
 
 type TabName = 'home' | 'search' | 'library';
+
+/**
+ * Only music and Shorts are surfaced. Ordinary videos are dropped rather than
+ * given a tab: this is a music app, and a "Videos" section filled with
+ * commentary and countdowns was noise.
+ */
+type Surface = Extract<TrackKind, 'music' | 'short'>;
 
 export class App {
   private root: HTMLElement;
@@ -79,11 +108,18 @@ export class App {
   private npSource!: HTMLElement;
 
   // Home shelves
-  private shelfMix!: HTMLElement;
-  private shelfRecent!: HTMLElement;
   private homeGreeting!: HTMLElement;
 
+  /** Two surfaces. Anything classified as a plain video never reaches the UI. */
+  private surface: Surface = 'music';
+  private surfaceTabs = new Map<Surface, HTMLButtonElement>();
+  private homeBody!: HTMLElement;
+  private hidden: Set<TrackId> = store.loadHidden();
+  /** Distinguishes "still loading" from "genuinely nothing" in the Shorts tab. */
+  private shortsSearched = false;
+
   private libraryList!: HTMLElement;
+  private playlistList!: HTMLElement;
   private statsBox!: HTMLElement;
 
   constructor(root: HTMLElement) {
@@ -103,6 +139,7 @@ export class App {
     this.likes = store.loadLikes();
 
     this.player.setVolume(this.prefs.volume);
+    this.ytEngine.setCaptionsEnabled(this.prefs.captionsEnabled);
     this.player.addListener({
       onProgress: (cur, dur) => this.renderProgress(cur, dur),
       onStateChange: (playing) => {
@@ -118,7 +155,7 @@ export class App {
   }
 
   async start(): Promise<void> {
-    if (this.prefs.seedTags.length === 0) {
+    if (this.prefs.musicTags.length === 0) {
       this.renderOnboarding();
       return;
     }
@@ -167,11 +204,11 @@ export class App {
     const done = button('primary', 'Pick at least one');
     done.disabled = true;
     done.addEventListener('click', () => {
-      this.prefs.seedTags = Array.from(picked);
+      this.prefs.musicTags = Array.from(picked);
       store.savePrefs(this.prefs);
       // Cold start: picks become synthetic positive observations, so the first
       // queue is already shaped by them rather than random.
-      this.model.seed(this.prefs.seedTags, []);
+      this.model.seed(this.prefs.musicTags, []);
       store.saveModel(this.model);
       void this.start();
     });
@@ -188,6 +225,8 @@ export class App {
     const paneHost = el('div', 'panes');
     for (const name of ['home', 'search', 'library'] as TabName[]) {
       const pane = el('section', 'pane');
+      // Library styles its headings as settings groups; the others do not.
+      if (name === 'library') pane.id = 'dot-library';
       pane.hidden = name !== this.active;
       this.panes.set(name, pane);
       paneHost.appendChild(pane);
@@ -239,15 +278,65 @@ export class App {
     this.homeGreeting = el('h1', 'greeting', 'Good evening');
     host.appendChild(this.homeGreeting);
 
-    this.shelfMix = this.buildShelf(host, 'Made for you');
-    this.shelfRecent = this.buildShelf(host, 'Recently played');
+    // One pool, three views. Switching surfaces costs no API call, because
+    // every candidate was already classified when it arrived.
+    const seg = el('div', 'segment');
+    const surfaces: Array<[Surface, string]> = [
+      ['music', 'Music'],
+      ['short', 'Shorts'],
+    ];
+    for (const [kind, label] of surfaces) {
+      const tab = button('seg', label);
+      if (kind === this.surface) tab.classList.add('on');
+      tab.addEventListener('click', () => {
+        this.surface = kind;
+        for (const [key, node] of this.surfaceTabs) node.classList.toggle('on', key === kind);
+        this.renderHome();
+        if (kind === 'short') void this.ensureShorts();
+      });
+      this.surfaceTabs.set(kind, tab);
+      seg.appendChild(tab);
+    }
+    host.appendChild(seg);
+
+    this.homeBody = el('div');
+    host.appendChild(this.homeBody);
   }
 
-  private buildShelf(host: HTMLElement, title: string): HTMLElement {
-    host.appendChild(el('h2', 'shelf-title', title));
-    const rail = el('div', 'rail');
-    host.appendChild(rail);
-    return rail;
+  /** The current surface's slice of the queue, minus anything hidden. */
+  private queueFor(kind: Surface): RankedTrack[] {
+    return this.queue.filter(
+      (r) => (r.track.kind ?? 'music') === kind && !this.hidden.has(r.track.id),
+    );
+  }
+
+  /**
+   * Shorts run out faster than the other surfaces, because the free pool only
+   * contains whatever happened to be vertical. When it empties, buy more —
+   * the one deliberately paid call in the app, and only on demand.
+   */
+  private async ensureShorts(): Promise<void> {
+    if (this.queueFor('short').length >= 3) return;
+    // Shorts draw on their own list, falling back to the music tags so the
+    // tab is not dead on arrival before anything is picked.
+    const seeds = this.prefs.shortsTags.length > 0 ? this.prefs.shortsTags : this.prefs.musicTags;
+    const bought = await this.youtube.topUpShorts(seeds);
+    this.shortsSearched = true;
+    if (bought.length === 0) {
+      this.renderHome();
+      return;
+    }
+
+    const known = new Set(this.queue.map((r) => r.track.id));
+    for (const track of bought) {
+      if (known.has(track.id) || this.hidden.has(track.id)) continue;
+      this.queue.push({
+        track,
+        score: this.model.score(featurize(track, contextBucket())),
+        explored: false,
+      });
+    }
+    this.renderHome();
   }
 
   private greetingText(): string {
@@ -260,48 +349,77 @@ export class App {
 
   private renderHome(): void {
     this.homeGreeting.textContent = this.greetingText();
+    clear(this.homeBody);
 
-    this.fillRail(
-      this.shelfMix,
-      this.queue.slice(0, 12),
-      'Add a YouTube key in Library to fill this.',
-    );
+    const items = this.queueFor(this.surface);
 
-    const recent = store.loadRecent().map((track) => ({ track, score: 0, explored: false }));
-    this.fillRail(this.shelfRecent, recent, 'Nothing played yet.');
-  }
-
-  private fillRail(rail: HTMLElement, items: RankedTrack[], emptyText: string): void {
-    clear(rail);
-    if (items.length === 0) {
-      rail.appendChild(el('p', 'empty', emptyText));
+    if (this.surface === 'short') {
+      this.homeBody.appendChild(el('h2', 'shelf-title', 'Shorts'));
+      if (items.length === 0) {
+        this.homeBody.appendChild(
+          el(
+            'p',
+            'empty',
+            this.shortsSearched
+              ? 'No Shorts found yet. They turn up as trending and your playlists refresh.'
+              : 'Looking for Shorts…',
+          ),
+        );
+        return;
+      }
+      // A grid of portrait thumbnails; tapping one opens the vertical player.
+      const grid = el('div', 'short-grid');
+      for (const ranked of items.slice(0, 12)) grid.appendChild(this.shortCell(ranked));
+      this.homeBody.appendChild(grid);
       return;
     }
-    for (const ranked of items) rail.appendChild(this.card(ranked));
+
+    // A vertical list, not a horizontal shelf. Side-scrolling rails hide most
+    // of the feed off-screen and fight the page's own scrolling, which is
+    // worse on a small screen than it is on a phone.
+    this.homeBody.appendChild(el('h2', 'shelf-title', 'Made for you'));
+    this.homeBody.appendChild(this.verticalList(items.slice(0, 30), this.emptyTextFor()));
+
+    const recent = store
+      .loadRecent()
+      .filter((t) => (t.kind ?? 'music') === this.surface)
+      .map((track) => ({ track, score: 0, explored: false }));
+    if (recent.length > 0) {
+      this.homeBody.appendChild(el('h2', 'shelf-title', 'Recently played'));
+      this.homeBody.appendChild(this.verticalList(recent.slice(0, 15), ''));
+    }
   }
 
-  private card(ranked: RankedTrack): HTMLElement {
-    const card = button('card');
-
-    const art = el('div', 'card-art');
-    paintArt(art, ranked.track.artworkUrl, ranked.track.title, ranked.track.isLive ? '📻' : '♪');
-    card.appendChild(art);
-
-    card.appendChild(el('span', 'card-title', ranked.track.title));
-    card.appendChild(el('span', 'card-sub', ranked.track.artist));
-
-    if (ranked.explored) {
-      const badge = el('span', 'card-badge', 'new');
-      card.appendChild(badge);
+  private verticalList(items: RankedTrack[], emptyText: string): HTMLElement {
+    const list = el('div', 'list');
+    if (items.length === 0) {
+      if (emptyText) list.appendChild(el('p', 'empty', emptyText));
+      return list;
     }
+    for (const ranked of items) list.appendChild(this.row(ranked));
+    return list;
+  }
 
-    card.addEventListener('click', () => {
+  private emptyTextFor(): string {
+    if (this.prefs.youtubePlaylists.length === 0 && !this.youtube.configured) {
+      return 'Add a playlist in Library to fill this.';
+    }
+    return 'No music in the pool yet.';
+  }
+
+  private shortCell(ranked: RankedTrack): HTMLElement {
+    const cell = button('short-cell');
+    const art = el('div', 'short-art');
+    paintArt(art, ranked.track.artworkUrl, ranked.track.title, '▶');
+    cell.appendChild(art);
+    cell.appendChild(el('span', 'short-label', ranked.track.title));
+    cell.addEventListener('click', () => {
       const at = this.queue.indexOf(ranked);
       if (at >= 0) this.queue.splice(at, 1);
       void this.playTrack(ranked);
       this.openNowPlaying();
     });
-    return card;
+    return cell;
   }
 
   /* -------------------------------------------------------------------- search */
@@ -367,6 +485,7 @@ export class App {
 
     const bucket = contextBucket();
     const ranked = found
+      .filter((track) => !this.hidden.has(track.id))
       .map((track) => ({ track, score: this.model.score(featurize(track, bucket)), explored: false }))
       .sort((a, b) => b.score - a.score);
 
@@ -425,29 +544,57 @@ export class App {
     host.appendChild(slider);
     host.appendChild(readout);
 
-    host.appendChild(el('h2', 'shelf-title', 'Your tags'));
-    const grid = el('div', 'chip-grid');
-    for (const tag of SEED_TAGS) {
-      const chip = button('chip', tag);
-      chip.style.backgroundColor = tintFor(tag);
-      if (this.prefs.seedTags.indexOf(tag) >= 0) chip.classList.add('on');
-      chip.addEventListener('click', () => {
-        const at = this.prefs.seedTags.indexOf(tag);
-        if (at >= 0) {
-          this.prefs.seedTags.splice(at, 1);
-          chip.classList.remove('on');
-        } else {
-          this.prefs.seedTags.push(tag);
-          chip.classList.add('on');
-          // Adding a tag nudges the model rather than resetting what it knows.
-          this.model.seed([tag], [], 2, 0.5);
-          store.saveModel(this.model);
-        }
-        store.savePrefs(this.prefs);
-      });
-      grid.appendChild(chip);
-    }
-    host.appendChild(grid);
+    this.buildTagPicker(
+      host,
+      'Music tags',
+      'Genres the Music feed is built from.',
+      this.prefs.musicTags,
+      SEED_TAGS,
+    );
+    this.buildTagPicker(
+      host,
+      'Shorts topics',
+      'Subjects, not genres. Leave empty and Shorts will follow your music tags instead.',
+      this.prefs.shortsTags,
+      SHORT_TOPICS,
+    );
+
+    host.appendChild(el('h2', 'shelf-title', 'Playlists'));
+    host.appendChild(
+      el(
+        'p',
+        'muted',
+        'Paste a public playlist or album link. Reading one costs no API quota ' +
+          'at all, so the feed runs free and your whole daily allowance stays ' +
+          'available for searching. Tags you add are what the recommender learns from.',
+      ),
+    );
+
+    const linkField = el('input', 'search-input key-input');
+    linkField.type = 'text';
+    linkField.id = 'dot-yt-link';
+    linkField.placeholder = 'youtube.com/playlist?list=…';
+    linkField.autocomplete = 'off';
+    linkField.spellcheck = false;
+    host.appendChild(linkField);
+
+    const tagField = el('input', 'search-input key-input');
+    tagField.type = 'text';
+    tagField.id = 'dot-yt-tags';
+    tagField.placeholder = 'tags, comma separated — e.g. phonk, drift';
+    tagField.autocomplete = 'off';
+    host.appendChild(tagField);
+
+    const addState = el('p', 'readout', '');
+    const addBtn = button('primary', 'Add playlist');
+    addBtn.addEventListener('click', () => {
+      void this.addYouTubeLink(linkField, tagField, addState, addBtn);
+    });
+    host.appendChild(addBtn);
+    host.appendChild(addState);
+
+    this.playlistList = el('div', 'list');
+    host.appendChild(this.playlistList);
 
     host.appendChild(el('h2', 'shelf-title', 'Content'));
     host.appendChild(
@@ -483,6 +630,20 @@ export class App {
     }
     host.appendChild(segment);
 
+    const capToggle = button('toggle');
+    const paintCaptions = (): void => {
+      capToggle.textContent = this.prefs.captionsEnabled ? 'Subtitles on' : 'Subtitles off';
+      capToggle.classList.toggle('on', this.prefs.captionsEnabled);
+    };
+    paintCaptions();
+    capToggle.addEventListener('click', () => {
+      this.prefs.captionsEnabled = !this.prefs.captionsEnabled;
+      store.savePrefs(this.prefs);
+      this.ytEngine.setCaptionsEnabled(this.prefs.captionsEnabled);
+      paintCaptions();
+    });
+    host.appendChild(capToggle);
+
     host.appendChild(el('h2', 'shelf-title', 'YouTube search'));
     host.appendChild(
       el(
@@ -498,17 +659,25 @@ export class App {
     const keyField = el('input', 'search-input key-input');
     keyField.type = 'text';
     keyField.id = 'dot-yt-key';
-    keyField.placeholder = 'YouTube Data API v3 key';
+    keyField.placeholder = 'Override the built-in key (optional)';
     keyField.autocomplete = 'off';
     keyField.spellcheck = false;
     keyField.value = this.prefs.youtubeApiKey;
 
-    const keyState = el('p', 'readout', this.youtube.configured ? 'Connected' : 'Not connected');
+    const describeKey = (): string => {
+      if (!this.youtube.configured) return 'Not connected';
+      return this.youtube.usingBuiltInKey ? 'Using the built-in key' : 'Connected';
+    };
+    const keyState = el('p', 'readout', describeKey());
     keyField.addEventListener('change', () => {
       this.prefs.youtubeApiKey = keyField.value.trim();
       store.savePrefs(this.prefs);
       if (!this.youtube.configured) {
         keyState.textContent = 'Not connected';
+        return;
+      }
+      if (this.youtube.usingBuiltInKey) {
+        keyState.textContent = 'Using the built-in key';
         return;
       }
       // One unit to find out now, rather than a key that silently returns
@@ -536,6 +705,45 @@ export class App {
     host.appendChild(reset);
   }
 
+  /**
+   * A tag picker bound to one list. Mutates the array in place, so the caller
+   * passes whichever of the prefs lists this picker owns.
+   */
+  private buildTagPicker(
+    host: HTMLElement,
+    title: string,
+    description: string,
+    list: string[],
+    options: readonly string[],
+  ): void {
+    host.appendChild(el('h2', 'shelf-title', title));
+    host.appendChild(el('p', 'muted', description));
+
+    const grid = el('div', 'chip-grid');
+    for (const tag of options) {
+      const chip = button('chip', tag);
+      chip.style.backgroundColor = tintFor(tag);
+      if (list.indexOf(tag) >= 0) chip.classList.add('on');
+      chip.addEventListener('click', () => {
+        const at = list.indexOf(tag);
+        if (at >= 0) {
+          list.splice(at, 1);
+          chip.classList.remove('on');
+        } else {
+          list.push(tag);
+          chip.classList.add('on');
+          // Adding a tag nudges the model rather than resetting what it knows.
+          this.model.seed([tag], [], 2, 0.5);
+          store.saveModel(this.model);
+        }
+        store.savePrefs(this.prefs);
+        void this.refillQueue().then(() => this.renderHome());
+      });
+      grid.appendChild(chip);
+    }
+    host.appendChild(grid);
+  }
+
   private renderLibrary(): void {
     clear(this.libraryList);
 
@@ -559,6 +767,7 @@ export class App {
     }
 
     if (this.statsBox) this.renderStats();
+    this.renderPlaylists();
   }
 
   private renderStats(): void {
@@ -684,7 +893,7 @@ export class App {
       else this.player.toggle();
     });
 
-    const next = button('np-ctl', '⏭', 'Next track');
+    const next = button('np-ctl np-next', '⏭', 'Next track');
     next.addEventListener('click', () => void this.next('skipped'));
 
     this.npLike = button('np-ctl', '♡', 'Like');
@@ -696,10 +905,68 @@ export class App {
     controls.appendChild(this.npLike);
     this.np.appendChild(controls);
 
+    // Standing instruction, distinct from a dislike: a dislike teaches the
+    // model, this removes the track from circulation entirely.
+    const hide = button('np-hide', "Don't show this again");
+    hide.addEventListener('click', () => this.hideCurrent());
+    this.np.appendChild(hide);
+
     this.npStatus = el('p', 'np-status', '');
     this.np.appendChild(this.npStatus);
 
+    this.attachShortsSwipe();
+
     this.root.appendChild(this.np);
+  }
+
+  /**
+   * Vertical swipe moves through the Shorts feed, the way the format expects.
+   * Only bound in shorts mode; elsewhere the overlay scrolls normally.
+   */
+  private attachShortsSwipe(): void {
+    let startY = 0;
+    let tracking = false;
+
+    this.np.addEventListener(
+      'touchstart',
+      (e: TouchEvent) => {
+        if (!this.np.classList.contains('shorts')) return;
+        tracking = true;
+        startY = e.touches[0]?.clientY ?? 0;
+      },
+      { passive: true },
+    );
+
+    this.np.addEventListener(
+      'touchend',
+      (e: TouchEvent) => {
+        if (!tracking || !this.np.classList.contains('shorts')) return;
+        tracking = false;
+        const endY = e.changedTouches[0]?.clientY ?? startY;
+        // Require a deliberate swipe; a tap or a nudge should do nothing.
+        if (startY - endY > 60) void this.next('skipped');
+      },
+      { passive: true },
+    );
+
+    // The desktop equivalent, so the feed is testable in a browser.
+    this.np.addEventListener('wheel', (e: WheelEvent) => {
+      if (!this.np.classList.contains('shorts')) return;
+      if (e.deltaY > 40) {
+        e.preventDefault();
+        void this.next('skipped');
+      }
+    });
+  }
+
+  /** Removes a track from circulation for good. */
+  private hideCurrent(): void {
+    const track = this.player.track;
+    if (!track) return;
+    this.hidden = store.hideTrack(track.id);
+    this.queue = this.queue.filter((r) => r.track.id !== track.id);
+    this.setStatus('Hidden — it will not come back');
+    void this.next('skipped');
   }
 
   private openNowPlaying(): void {
@@ -728,7 +995,9 @@ export class App {
     paintArt(this.npArtImg, track.artworkUrl, track.title, track.isLive ? '📻' : '♪');
 
     // A video source needs a 16:9 stage; artwork-only tracks keep the square.
+    const kind = track.kind ?? 'video';
     this.np.classList.toggle('video', track.sourceId === 'youtube');
+    this.np.classList.toggle('shorts', kind === 'short');
 
     this.npLike.textContent = this.likes.has(track.id) ? '♥' : '♡';
     this.npLike.classList.toggle('on', this.likes.has(track.id));
@@ -797,24 +1066,50 @@ export class App {
     if (this.refilling) return;
     this.refilling = true;
     try {
-      const tags = this.prefs.seedTags.length > 0 ? this.prefs.seedTags : ['phonk'];
-      const picks = tags.slice().sort(() => Math.random() - 0.5).slice(0, 4);
+      // Anything already known locally is free — no request, no quota. With a
+      // couple of playlists added this alone fills the queue, which is the
+      // whole point: search.list costs 100 units and playlists cost nothing.
+      const free = this.youtube.catalogTracks(200);
 
-      const batches = await Promise.all([
-        ...picks.map((tag) =>
-          this.fromAllSources((s) => s.browse?.('tag', tag, 12) ?? s.search(tag, 12)),
-        ),
-        this.fromAllSources((s) => s.browse?.('trending', undefined, 10) ?? Promise.resolve([])),
-      ]);
+      // Only pay for candidates when the local pool is too thin to rank well.
+      let bought: Track[] = [];
+      if (free.length < CANDIDATE_FLOOR) {
+        const tags = this.prefs.musicTags.length > 0 ? this.prefs.musicTags : ['phonk'];
+        const picks = tags.slice().sort(() => Math.random() - 0.5).slice(0, 4);
 
-      this.queue = buildQueue(batches.flat(), this.model, {
+        const batches = await Promise.all([
+          ...picks.map((tag) =>
+            this.fromAllSources((s) => s.browse?.('tag', tag, 12) ?? s.search(tag, 12)),
+          ),
+          this.fromAllSources((s) => s.browse?.('trending', undefined, 10) ?? Promise.resolve([])),
+        ]);
+        bought = batches.flat();
+      }
+
+      // A video about music is not music. Dropped here rather than given a
+      // tab, so the Music feed stays recordings and the Shorts feed stays
+      // Shorts. Logged, because a false negative silently loses real music.
+      const candidates = [...free, ...bought].filter((t) => {
+        if ((t.kind ?? 'music') !== 'video') return true;
+        console.info('not music:', t.title, '·', t.artist);
+        return false;
+      });
+
+      this.queue = buildQueue(candidates, this.model, {
         count: QUEUE_TARGET,
         discovery: this.prefs.discovery,
-        exclude: new Set(store.loadHistory()),
+        // History and hidden both suppress, but only one of them expires.
+        exclude: new Set([...store.loadHistory(), ...this.hidden]),
         bucket: contextBucket(),
       });
 
-      if (this.queue.length === 0) this.setStatus('No tracks available. Check your connection.');
+      if (this.queue.length === 0) {
+        this.setStatus(
+          this.prefs.youtubePlaylists.length === 0
+            ? 'Nothing to play yet — add a playlist in Library.'
+            : 'No tracks available. Check your connection.',
+        );
+      }
     } finally {
       this.refilling = false;
     }
@@ -848,7 +1143,14 @@ export class App {
       void this.refillQueue().then(() => this.renderHome());
     }
 
-    const nextUp = this.queue.shift();
+    // Advance within the surface being watched: a Short should not be followed
+    // by a six-minute video just because it was next in the pool.
+    const current: Surface = this.player.track?.kind === 'short' ? 'short' : 'music';
+    const sameSurface = this.queueFor(current);
+    const nextUp = sameSurface[0] ?? this.queue.find((r) => !this.hidden.has(r.track.id));
+    if (nextUp) this.queue.splice(this.queue.indexOf(nextUp), 1);
+
+    if (current === 'short') void this.ensureShorts();
     this.renderHome();
 
     if (!nextUp) {
@@ -936,6 +1238,125 @@ export class App {
         return;
       }
       await new Promise((r) => setTimeout(r, 300));
+    }
+  }
+
+  /* ------------------------------------------------------- youtube playlists */
+
+  /**
+   * Adds a playlist or a single video.
+   *
+   * Enumeration goes through the embedded player rather than the Data API,
+   * which is why this costs nothing: the player can read a public list without
+   * authentication, where playlistItems.list would spend quota.
+   */
+  private async addYouTubeLink(
+    linkField: HTMLInputElement,
+    tagField: HTMLInputElement,
+    state: HTMLElement,
+    btn: HTMLButtonElement,
+  ): Promise<void> {
+    const parsed = parseYouTubeInput(linkField.value);
+    if (!parsed) {
+      state.textContent = 'That does not look like a YouTube link.';
+      return;
+    }
+    // Some list ids exist but cannot be opened by an embed; say which and why.
+    if (parsed.kind === 'unsupported') {
+      state.textContent = parsed.reason;
+      return;
+    }
+
+    const tags = tagField.value
+      .split(',')
+      .map((t) => t.trim().toLowerCase())
+      .filter((t) => t.length > 0);
+
+    btn.disabled = true;
+    try {
+      if (parsed.kind === 'video') {
+        const [track] = this.youtube.registerPlaylist([parsed.id], tags, 'Track');
+        state.textContent = 'Added. Playing now.';
+        linkField.value = '';
+        if (track) {
+          await this.playTrack({ track, score: 1, explored: false });
+          this.openNowPlaying();
+        }
+        return;
+      }
+
+      state.textContent = 'Reading playlist…';
+      const ids = await this.ytEngine.enumeratePlaylist(parsed.id);
+      if (ids.length === 0) {
+        state.textContent = 'Could not read that playlist. Is it public?';
+        return;
+      }
+
+      const label = tags[0] ?? 'Playlist';
+      this.youtube.registerPlaylist(ids, tags, label);
+
+      const saved = this.prefs.youtubePlaylists.filter((pl) => pl.id !== parsed.id);
+      saved.unshift({ id: parsed.id, label, tags, count: ids.length });
+      this.prefs.youtubePlaylists = saved;
+
+      // Playlist tags double as taste seeds so the model can rank the tracks.
+      for (const tag of tags) {
+        if (this.prefs.musicTags.indexOf(tag) < 0) this.prefs.musicTags.push(tag);
+      }
+      store.savePrefs(this.prefs);
+      this.model.seed(tags, [], 2, 0.5);
+      store.saveModel(this.model);
+
+      state.textContent = 'Added ' + ids.length + ' tracks.';
+      linkField.value = '';
+      tagField.value = '';
+
+      await this.refillQueue();
+      this.renderHome();
+      this.renderPlaylists();
+    } catch {
+      state.textContent = 'Something went wrong reading that link.';
+    } finally {
+      btn.disabled = false;
+    }
+  }
+
+  private renderPlaylists(): void {
+    if (!this.playlistList) return;
+    clear(this.playlistList);
+
+    if (this.prefs.youtubePlaylists.length === 0) {
+      this.playlistList.appendChild(el('p', 'empty', 'No playlists yet.'));
+      return;
+    }
+
+    for (const saved of this.prefs.youtubePlaylists) {
+      const row = el('div', 'row');
+
+      const art = el('div', 'row-art', '≡');
+      art.style.backgroundColor = tintFor(saved.label);
+      row.appendChild(art);
+
+      const main = el('div', 'row-main');
+      main.appendChild(el('span', 'row-title', saved.label));
+      main.appendChild(
+        el(
+          'span',
+          'row-sub',
+          saved.count + ' tracks' + (saved.tags.length > 0 ? ' · ' + saved.tags.join(', ') : ''),
+        ),
+      );
+      row.appendChild(main);
+
+      const remove = button('mini-btn', '✕', 'Remove playlist');
+      remove.addEventListener('click', () => {
+        this.prefs.youtubePlaylists = this.prefs.youtubePlaylists.filter((pl) => pl.id !== saved.id);
+        store.savePrefs(this.prefs);
+        this.renderPlaylists();
+      });
+      row.appendChild(remove);
+
+      this.playlistList.appendChild(row);
     }
   }
 

@@ -35,6 +35,9 @@ const LIST_EMPTY_GRACE_MS = 5000;
 /* The IFrame API defines a global; these are the parts we use. */
 interface YtPlayer {
   loadVideoById(id: string): void;
+  unloadModule(name: string): void;
+  loadModule(name: string): void;
+  setOption(module: string, option: string, value: unknown): void;
   cueVideoById(id: string): void;
   cuePlaylist(options: { listType: string; list: string }): void;
   getPlaylist(): string[] | null;
@@ -114,6 +117,8 @@ export class YouTubeEngine implements PlaybackEngine {
   private track: Track | null = null;
   /** Guards against the ENDED state firing repeatedly for one track. */
   private endedFor: string | null = null;
+  /** Off by default; Settings can put captions back. */
+  private captionsEnabled = false;
 
   constructor(host: HTMLElement) {
     this.host = host;
@@ -143,14 +148,21 @@ export class YouTubeEngine implements PlaybackEngine {
               rel: 0,
               modestbranding: 1,
               iv_load_policy: 3,
+              // Do not force captions on. This alone is not enough — it only
+              // means "do not turn them on by default", and a viewer whose
+              // YouTube account has captions enabled still gets them, hence
+              // silenceCaptions() below.
+              cc_load_policy: 0,
             },
             events: {
               onReady: () => {
                 player.setVolume(this.pendingVolume);
+                this.silenceCaptions();
                 resolve(player);
               },
               onStateChange: (e: { data: number }) => {
                 if (e.data === YT.PlayerState.PLAYING) {
+                  this.silenceCaptions();
                   this.startPolling();
                   this.events.onPlay?.();
                 } else if (e.data === YT.PlayerState.PAUSED) {
@@ -196,12 +208,59 @@ export class YouTubeEngine implements PlaybackEngine {
     this.poll = null;
   }
 
+  /**
+   * Turns captions off.
+   *
+   * `cc_load_policy: 0` only means "do not switch them on by default" — it does
+   * not override a viewer whose YouTube account prefers captions. Unloading the
+   * caption modules does. Both module names are tried because the player has
+   * used each at different times, and neither is guaranteed to be loaded yet,
+   * so every call is individually guarded.
+   */
+  setCaptionsEnabled(enabled: boolean): void {
+    this.captionsEnabled = enabled;
+    if (!enabled) {
+      this.silenceCaptions();
+      return;
+    }
+    // Unloading the module is not reversible by flag alone — without loading
+    // it back, switching subtitles on did nothing until the page reloaded.
+    const player = this.player;
+    if (!player) return;
+    for (const moduleName of ['captions', 'cc']) {
+      try {
+        player.loadModule(moduleName);
+      } catch {
+        /* this video has no caption track */
+      }
+    }
+  }
+
+  private silenceCaptions(): void {
+    const player = this.player;
+    if (!player || this.captionsEnabled) return;
+    for (const moduleName of ['captions', 'cc']) {
+      try {
+        player.unloadModule(moduleName);
+      } catch {
+        /* module not loaded for this video */
+      }
+    }
+    try {
+      player.setOption('captions', 'track', {});
+    } catch {
+      /* no caption track on this video */
+    }
+  }
+
   async load(track: Track, handle: string): Promise<void> {
     this.track = track;
     this.endedFor = null;
     this.host.hidden = false;
     const player = await this.ensurePlayer();
     player.loadVideoById(handle);
+    // Each video brings its own caption track, so this has to run per load.
+    this.silenceCaptions();
   }
 
   async play(): Promise<void> {

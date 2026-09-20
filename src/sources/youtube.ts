@@ -18,7 +18,15 @@
 
 import * as store from '../store.ts';
 import { blockReason } from './filter.ts';
+import { classifyKind, parseEmbedAspect } from './kind.ts';
 import type { BrowseKind, MusicSource, SourceCapabilities, Track, TrackId } from '../types.ts';
+
+/**
+ * Injected by the build from dot.local.json, which is gitignored. Empty when
+ * no local key is configured, in which case Settings is the only way in.
+ */
+declare const __DOT_YT_KEY__: string;
+const BUILT_IN_KEY = typeof __DOT_YT_KEY__ === 'string' ? __DOT_YT_KEY__ : '';
 
 const API = 'https://www.googleapis.com/youtube/v3';
 /** Category 10 is Music. Keeps podcasts and vlogs out of a music feed. */
@@ -37,6 +45,7 @@ const TRENDING_TTL_MS = 60 * 60 * 1000;
 
 interface YtThumb { url?: string }
 interface YtSnippet {
+  categoryId?: string;
   title?: string;
   channelTitle?: string;
   channelId?: string;
@@ -51,6 +60,12 @@ interface YtVideo {
   statistics?: { viewCount?: string };
   /** `madeForKids` is YouTube's own designation, and the best signal there is. */
   status?: { madeForKids?: boolean };
+  /**
+   * Embed dimensions follow the source video's orientation — how Shorts are
+   * spotted. `embedHeight`/`embedWidth` are only returned when the request
+   * passes maxWidth or maxHeight, which is why both are on the query below.
+   */
+  player?: { embedHtml?: string; embedHeight?: number | string; embedWidth?: number | string };
 }
 
 /** ISO-8601 durations, e.g. PT3M45S. */
@@ -96,6 +111,17 @@ export function describeKeyError(status: number, body: unknown): string {
   }
   if (status === 0) return 'Could not reach the YouTube API — check the connection.';
   return error?.message ?? ('YouTube API error ' + status);
+}
+
+/**
+ * Prefers the explicit dimensions, which are exact, and falls back to reading
+ * them out of the embed markup.
+ */
+function embedAspect(video: YtVideo): { width: number; height: number } | undefined {
+  const w = Number(video.player?.embedWidth);
+  const h = Number(video.player?.embedHeight);
+  if (Number.isFinite(w) && Number.isFinite(h) && w > 0 && h > 0) return { width: w, height: h };
+  return parseEmbedAspect(video.player?.embedHtml);
 }
 
 function videoIdOf(id: TrackId): string {
@@ -207,6 +233,12 @@ function placeholderTrack(videoId: string, tags: string[], label: string, index:
     duration: 0,
     artworkUrl: 'https://i.ytimg.com/vi/' + videoId + '/mqdefault.jpg',
     tags,
+    // Nothing is known yet — no duration, no category, not even a title — so
+    // classification has to wait for the player. Music is the right default
+    // for a playlist someone deliberately added to a music app, and it gets
+    // corrected on first play. Without this every playlist track silently
+    // filed itself under Videos.
+    kind: 'music',
   };
 }
 
@@ -238,6 +270,14 @@ function toTrack(video: YtVideo): Track | null {
     // the descriptors the recommender wants.
     tags: Array.isArray(snippet.tags) ? snippet.tags.slice(0, 15) : [],
     madeForKids: video.status?.madeForKids,
+    kind: classifyKind({
+      title: snippet.title ?? '',
+      artist: cleanArtist(snippet.channelTitle),
+      tags: Array.isArray(snippet.tags) ? snippet.tags : [],
+      duration: parseIsoDuration(video.contentDetails?.duration),
+      aspect: embedAspect(video),
+      categoryId: snippet.categoryId,
+    }),
     playCount: Number.isFinite(views) ? views : undefined,
     releaseYear: snippet.publishedAt ? Number(snippet.publishedAt.slice(0, 4)) : undefined,
   };
@@ -263,9 +303,18 @@ export class YouTubeSource implements MusicSource {
   /** How many results the last read dropped, for the "N hidden" note. */
   lastHidden = 0;
 
-  /** Read lazily so pasting a key in Settings takes effect without a reload. */
+  /**
+   * Read lazily so pasting a key in Settings takes effect without a reload.
+   * A key entered in Settings wins over the built-in one, so it can be
+   * overridden per device without rebuilding.
+   */
   private get apiKey(): string {
-    return store.loadPrefs().youtubeApiKey.trim();
+    return store.loadPrefs().youtubeApiKey.trim() || BUILT_IN_KEY;
+  }
+
+  /** True when the key came from the build rather than from Settings. */
+  get usingBuiltInKey(): boolean {
+    return !store.loadPrefs().youtubeApiKey.trim() && BUILT_IN_KEY.length > 0;
   }
 
   /** True when live search is available. Playback never needs this. */
@@ -338,6 +387,11 @@ export class YouTubeSource implements MusicSource {
       artist: author.replace(/\s*-\s*Topic$/i, '').trim() || 'YouTube',
       duration: existing?.duration ?? 0,
       artworkUrl: existing?.artworkUrl ?? 'https://i.ytimg.com/vi/' + videoId + '/mqdefault.jpg',
+      // A real title finally allows classification. Anything the API already
+      // told us is richer than what can be inferred here, so it wins.
+      kind:
+        existing?.kind ??
+        classifyKind({ title, artist: author, tags, duration: existing?.duration ?? 0 }),
       // Keep whatever tags the playlist contributed; they are the taste signal.
       tags: Array.from(new Set([...(existing?.tags ?? []), ...tags])),
     };
@@ -364,6 +418,14 @@ export class YouTubeSource implements MusicSource {
     });
     store.saveYtCatalog(this.catalog);
     return out;
+  }
+
+  /**
+   * Everything already known locally, filtered and ready to rank. Free: no
+   * request, no quota. This is what playlists exist to fill.
+   */
+  catalogTracks(limit = 200): Track[] {
+    return this.applyFilter(this.knownTracks()).slice(0, limit);
   }
 
   private localSearch(query: string, limit: number): Track[] {
@@ -461,7 +523,8 @@ export class YouTubeSource implements MusicSource {
   private async hydrate(ids: string[]): Promise<Track[]> {
     if (ids.length === 0) return [];
     const payload = await this.getJson(
-      `/videos?part=snippet,contentDetails,statistics,status&maxResults=50&id=${ids.slice(0, 50).join(',')}`,
+      `/videos?part=snippet,contentDetails,statistics,status,player&maxWidth=480` +
+        `&maxResults=50&id=${ids.slice(0, 50).join(',')}`,
       COST_LIST,
     );
     const items = (payload as { items?: YtVideo[] } | null)?.items;
@@ -490,8 +553,7 @@ export class YouTubeSource implements MusicSource {
     if (cached) return this.applyFilter(cached).slice(0, limit);
 
     const payload = await this.getJson(
-      `/search?part=snippet&type=video&videoCategoryId=${MUSIC_CATEGORY}` +
-        `&maxResults=50&q=${encodeURIComponent(query)}`,
+      `/search?part=snippet&type=video&maxResults=50&q=${encodeURIComponent(query)}`,
       COST_SEARCH,
     );
     const items = (payload as { items?: YtVideo[] } | null)?.items;
@@ -522,6 +584,62 @@ export class YouTubeSource implements MusicSource {
     return videoIdOf(id);
   }
 
+  /** One trending chart. `scope` is an extra query fragment, e.g. a category. */
+  private async chart(scope: string): Promise<Track[]> {
+    const payload = await this.getJson(
+      `/videos?part=snippet,contentDetails,statistics,status,player&maxWidth=480` +
+        `&chart=mostPopular&maxResults=50${scope}`,
+      COST_LIST,
+    );
+    const items = (payload as { items?: YtVideo[] } | null)?.items;
+    if (!Array.isArray(items)) return [];
+
+    const out: Track[] = [];
+    for (const item of items) {
+      const track = toTrack(item);
+      if (track && this.playable(track)) out.push(track);
+    }
+    return out;
+  }
+
+  /**
+   * Buys more Shorts when the free pool runs dry. This is the one deliberately
+   * paid call in the app — 100 units — so it is only ever triggered by the
+   * Shorts tab actually running out, never on a schedule.
+   */
+  async topUpShorts(seedTags: string[]): Promise<Track[]> {
+    if (!this.configured) return [];
+    const seed = seedTags[Math.floor(Math.random() * Math.max(1, seedTags.length))] ?? 'music';
+    const query = seed + ' #shorts';
+
+    const cacheKey = 'yt.shorts.' + seed.toLowerCase();
+    const cached = store.cacheGet<Track[]>(cacheKey, SEARCH_TTL_MS);
+    if (cached) return this.applyFilter(cached);
+
+    const payload = await this.getJson(
+      // `videoDuration=short` is under four minutes — not Shorts-specific, but
+      // it removes most of what could never be one before we pay to hydrate.
+      `/search?part=snippet&type=video&videoDuration=short&maxResults=50` +
+        `&q=${encodeURIComponent(query)}`,
+      COST_SEARCH,
+    );
+    const items = (payload as { items?: YtVideo[] } | null)?.items;
+    if (!Array.isArray(items)) return [];
+
+    const ids = items
+      .map((i) => (typeof i.id === 'string' ? i.id : i.id?.videoId))
+      .filter((id): id is string => typeof id === 'string');
+
+    // This search already asked for #shorts and a short duration, so anything
+    // brief that comes back is treated as one. Demanding classifyKind agree as
+    // well discarded nearly the whole result set and left the tab empty.
+    const tracks = (await this.hydrate(ids))
+      .filter((t) => t.duration > 0 && t.duration <= 180)
+      .map((t): Track => ({ ...t, kind: 'short' }));
+    if (tracks.length > 0) store.cacheSet(cacheKey, tracks);
+    return this.applyFilter(tracks);
+  }
+
   async browse(kind: BrowseKind, key?: string, limit = 20): Promise<Track[]> {
     // Keyless mode: the feed is drawn from the playlists you added.
     if (!this.configured) {
@@ -538,18 +656,19 @@ export class YouTubeSource implements MusicSource {
       const cached = store.cacheGet<Track[]>('yt.trending2', TRENDING_TTL_MS);
       if (cached) return this.applyFilter(cached).slice(0, limit);
 
-      const payload = await this.getJson(
-        `/videos?part=snippet,contentDetails,statistics,status&chart=mostPopular` +
-          `&videoCategoryId=${MUSIC_CATEGORY}&maxResults=${Math.min(50, limit)}`,
-        COST_LIST,
-      );
-      const items = (payload as { items?: YtVideo[] } | null)?.items;
-      if (!Array.isArray(items)) return [];
+      // Two charts: the music one keeps the Music tab stocked, the general one
+      // feeds Videos and turns up most of the Shorts. One unit each.
+      const charts = await Promise.all([
+        this.chart(`&videoCategoryId=${MUSIC_CATEGORY}`),
+        this.chart(''),
+      ]);
 
+      const seen = new Set<string>();
       const out: Track[] = [];
-      for (const item of items) {
-        const track = toTrack(item);
-        if (track && this.playable(track)) out.push(track);
+      for (const track of charts.flat()) {
+        if (seen.has(track.id)) continue;
+        seen.add(track.id);
+        out.push(track);
       }
       if (out.length > 0) store.cacheSet('yt.trending2', out);
       return this.applyFilter(out).slice(0, limit);
