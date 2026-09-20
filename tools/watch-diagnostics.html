@@ -1,0 +1,578 @@
+<title>Dot Watch Probe</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wght@500;700&family=JetBrains+Mono:wght@400;700&display=swap">
+<style>
+/* Deliberately single-theme: this is an instrument readout, and it is meant to be
+   read on a watch face outdoors and in the dark. It also must survive a WebView old
+   enough that CSS custom properties may not exist, so every colour is a literal. */
+
+html, body { background: #0e1216; }
+
+body {
+  margin: 0;
+  padding-block: 20px;
+  padding-left: 16px;
+  padding-right: 16px;
+  background: #0e1216;
+  color: #d7dee6;
+  font-family: "JetBrains Mono", ui-monospace, Menlo, Consolas, monospace;
+  font-size: 13px;
+  line-height: 1.5;
+  -webkit-text-size-adjust: 100%;
+}
+
+.wrap { max-width: 560px; margin: 0 auto; }
+
+h1 {
+  font-family: Archivo, "Helvetica Neue", Arial, sans-serif;
+  font-weight: 700;
+  font-size: 21px;
+  line-height: 1.15;
+  letter-spacing: -0.01em;
+  margin: 0;
+  color: #f2f6fa;
+}
+
+.sub { color: #7d8b99; font-size: 12px; margin: 6px 0 0; }
+
+h2 {
+  font-family: Archivo, "Helvetica Neue", Arial, sans-serif;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.13em;
+  text-transform: uppercase;
+  color: #6f8598;
+  margin: 26px 0 8px;
+  padding-bottom: 6px;
+  border-bottom: 1px solid #1e262e;
+}
+
+/* No flexbox gap anywhere: Chrome 84. Margins only. */
+.row {
+  display: -webkit-box;
+  display: -webkit-flex;
+  display: flex;
+  -webkit-box-align: baseline;
+  -webkit-align-items: baseline;
+  align-items: baseline;
+  padding: 5px 0;
+  border-bottom: 1px solid #161d24;
+}
+
+.k { color: #8b9aa8; -webkit-flex: 0 0 42%; flex: 0 0 42%; padding-right: 10px; word-break: break-word; }
+.v { -webkit-flex: 1 1 auto; flex: 1 1 auto; color: #e6edf4; text-align: right; word-break: break-word; font-variant-numeric: tabular-nums; }
+
+.dot { display: inline-block; width: 7px; height: 7px; border-radius: 50%; margin-left: 7px; vertical-align: middle; background: #445; }
+.ok   { background: #3fb07a; }
+.warn { background: #d9a13b; }
+.bad  { background: #d9614f; }
+
+.pass { color: #5ecf9a; }
+.caution { color: #e8b75c; }
+.fail { color: #ef7e6c; }
+
+/* The headline numbers: screen geometry and engine version decide the whole build. */
+.hero {
+  background: #141b22;
+  border: 1px solid #22303b;
+  border-radius: 4px;
+  padding: 14px;
+  margin-top: 18px;
+}
+.hero .big {
+  font-size: 26px;
+  font-weight: 700;
+  color: #f2f6fa;
+  line-height: 1.2;
+  font-variant-numeric: tabular-nums;
+}
+.hero .cap {
+  font-family: Archivo, "Helvetica Neue", Arial, sans-serif;
+  font-size: 10px;
+  letter-spacing: 0.13em;
+  text-transform: uppercase;
+  color: #6f8598;
+  margin-bottom: 3px;
+}
+.hero .half { margin-bottom: 12px; }
+.hero .half:last-child { margin-bottom: 0; }
+
+button {
+  font-family: Archivo, "Helvetica Neue", Arial, sans-serif;
+  font-size: 13px;
+  font-weight: 700;
+  color: #0e1216;
+  background: #58c2c9;
+  border: 0;
+  border-radius: 3px;
+  padding: 12px 16px;
+  margin: 10px 0 0;
+  width: 100%;
+  min-height: 44px;
+  cursor: pointer;
+  -webkit-appearance: none;
+}
+button:disabled { background: #2c3b45; color: #6f8598; cursor: default; }
+button:focus { outline: 2px solid #8fdfe4; outline-offset: 2px; }
+
+.note { color: #7d8b99; font-size: 12px; margin: 8px 0 0; }
+
+textarea {
+  width: 100%;
+  box-sizing: border-box;
+  min-height: 92px;
+  margin-top: 10px;
+  background: #0a0e12;
+  color: #9fe8c4;
+  border: 1px solid #22303b;
+  border-radius: 3px;
+  padding: 9px;
+  font-family: "JetBrains Mono", ui-monospace, Menlo, Consolas, monospace;
+  font-size: 11px;
+  line-height: 1.45;
+  resize: vertical;
+}
+
+.ua { color: #7d8b99; font-size: 11px; word-break: break-all; margin-top: 6px; }
+
+footer { color: #58656f; font-size: 11px; margin-top: 28px; padding-top: 12px; border-top: 1px solid #1e262e; }
+</style>
+
+<div class="wrap">
+
+  <h1>Dot Watch Probe</h1>
+  <p class="sub">Step 0. Open this on the watch, run both tests, then read back the summary at the bottom.</p>
+
+  <div class="hero">
+    <div class="half">
+      <div class="cap">Viewport (CSS px)</div>
+      <div class="big" id="h-view">&mdash;</div>
+    </div>
+    <div class="half">
+      <div class="cap">Browser engine</div>
+      <div class="big" id="h-engine">&mdash;</div>
+    </div>
+  </div>
+
+  <h2>Device</h2>
+  <div id="sec-device"></div>
+  <p class="ua" id="ua"></p>
+
+  <h2>Storage</h2>
+  <div id="sec-storage"></div>
+
+  <h2>Audio codecs</h2>
+  <div id="sec-codec"></div>
+
+  <h2>JavaScript &amp; CSS support</h2>
+  <div id="sec-feat"></div>
+
+  <h2>Network test</h2>
+  <p class="note">Checks the watch can reach the Audius API over its own WiFi or SIM, and that the browser is allowed to read the response.</p>
+  <button id="btn-net" type="button">Run network test</button>
+  <div id="sec-net"></div>
+
+  <h2>Background audio test</h2>
+  <p class="note">The make-or-break test. Press start, wait for sound, then <strong>lock the screen for about 15 seconds</strong> and wake it again. This measures whether audio kept playing while the screen was off.</p>
+  <button id="btn-audio" type="button">Start background audio test</button>
+  <div id="sec-audio"></div>
+
+  <h2>Summary</h2>
+  <p class="note">Read this back to Claude, or screenshot it.</p>
+  <textarea id="summary" readonly></textarea>
+  <button id="btn-copy" type="button">Copy summary</button>
+
+  <footer>Dot &middot; step 0 device probe &middot; nothing is uploaded, everything runs locally in this page</footer>
+
+</div>
+
+<script>
+/* ES5 ONLY.
+   This page exists to measure how old the WebView is, so it cannot assume anything
+   modern: no let/const, no arrow functions, no template literals, no fetch, no
+   Promise-dependent control flow. If this file needed Chromium 60 to run, it could
+   not report a Chromium 45. */
+
+function el(id) { return document.getElementById(id); }
+
+var state = {
+  engine: 'unknown',
+  android: 'unknown',
+  net: 'not run',
+  bgaudio: 'not run'
+};
+
+function row(parent, key, value, status) {
+  var r = document.createElement('div');
+  r.className = 'row';
+
+  var k = document.createElement('div');
+  k.className = 'k';
+  k.appendChild(document.createTextNode(key));
+
+  var v = document.createElement('div');
+  v.className = 'v';
+  v.appendChild(document.createTextNode(value));
+
+  if (status) {
+    var d = document.createElement('span');
+    d.className = 'dot ' + status;
+    v.appendChild(d);
+  }
+
+  r.appendChild(k);
+  r.appendChild(v);
+  parent.appendChild(r);
+}
+
+function has(obj, name) {
+  try { return typeof obj !== 'undefined' && obj !== null && typeof obj[name] !== 'undefined'; }
+  catch (e) { return false; }
+}
+
+/* ---------- Device ---------- */
+
+var ua = navigator.userAgent || '';
+el('ua').appendChild(document.createTextNode(ua));
+
+var chromeMatch = ua.match(/Chrome\/(\d+)/);
+var chromeVer = chromeMatch ? parseInt(chromeMatch[1], 10) : 0;
+var androidMatch = ua.match(/Android (\d+(\.\d+)?)/);
+var androidVer = androidMatch ? androidMatch[1] : 'unknown';
+var isWebView = ua.indexOf('; wv)') !== -1;
+
+state.engine = chromeVer ? ('Chromium ' + chromeVer) : 'non-Chromium';
+state.android = androidVer;
+
+el('h-engine').firstChild.nodeValue = chromeVer ? ('Chromium ' + chromeVer) : 'unknown engine';
+
+var vw = window.innerWidth || document.documentElement.clientWidth;
+var vh = window.innerHeight || document.documentElement.clientHeight;
+var dpr = window.devicePixelRatio || 1;
+el('h-view').firstChild.nodeValue = vw + ' × ' + vh;
+state.viewport = vw + 'x' + vh + '@' + dpr;
+
+var dev = el('sec-device');
+row(dev, 'Android version', androidVer, androidVer === 'unknown' ? 'warn' : 'ok');
+
+/* Capacitor needs Chromium 60+. Below that we must hand-roll the WebView shell,
+   which is the plan anyway, so this is informative rather than fatal. */
+var engineStatus = chromeVer === 0 ? 'bad' : (chromeVer < 55 ? 'bad' : (chromeVer < 61 ? 'warn' : 'ok'));
+row(dev, 'Chromium version', chromeVer ? String(chromeVer) : 'not detected', engineStatus);
+row(dev, 'Running as WebView', isWebView ? 'yes' : 'no (real browser)');
+row(dev, 'Screen (device px)', (screen.width || '?') + ' × ' + (screen.height || '?'));
+row(dev, 'Viewport (CSS px)', vw + ' × ' + vh);
+row(dev, 'Pixel ratio', String(dpr));
+row(dev, 'CPU cores', has(navigator, 'hardwareConcurrency') ? String(navigator.hardwareConcurrency) : 'not reported');
+row(dev, 'Device memory', has(navigator, 'deviceMemory') ? navigator.deviceMemory + ' GB' : 'not reported');
+row(dev, 'Touch points', has(navigator, 'maxTouchPoints') ? String(navigator.maxTouchPoints) : 'not reported');
+row(dev, 'Language', navigator.language || 'unknown');
+
+if (has(navigator, 'connection') && navigator.connection && navigator.connection.effectiveType) {
+  row(dev, 'Connection', navigator.connection.effectiveType);
+}
+
+/* ---------- Storage ---------- */
+
+var sto = el('sec-storage');
+
+var lsOk = false;
+try {
+  window.localStorage.setItem('__dot', '1');
+  lsOk = window.localStorage.getItem('__dot') === '1';
+  window.localStorage.removeItem('__dot');
+} catch (e) { lsOk = false; }
+row(sto, 'localStorage', lsOk ? 'working' : 'blocked', lsOk ? 'ok' : 'bad');
+state.ls = lsOk;
+
+var idbPresent = false;
+try { idbPresent = typeof window.indexedDB !== 'undefined' && window.indexedDB !== null; } catch (e) {}
+row(sto, 'IndexedDB present', idbPresent ? 'yes' : 'no', idbPresent ? 'ok' : 'bad');
+
+/* Presence is not the same as working. Actually open a database. */
+var idbRowDone = false;
+function reportIdb(text, status) {
+  if (idbRowDone) { return; }
+  idbRowDone = true;
+  row(sto, 'IndexedDB open test', text, status);
+  state.idb = text;
+  render();
+}
+if (idbPresent) {
+  try {
+    var req = window.indexedDB.open('dot_probe', 1);
+    req.onupgradeneeded = function () {
+      try { req.result.createObjectStore('t', { keyPath: 'id' }); } catch (e) {}
+    };
+    req.onsuccess = function () {
+      try { req.result.close(); window.indexedDB.deleteDatabase('dot_probe'); } catch (e) {}
+      reportIdb('working', 'ok');
+    };
+    req.onerror = function () { reportIdb('failed to open', 'bad'); };
+    req.onblocked = function () { reportIdb('blocked', 'warn'); };
+    setTimeout(function () { reportIdb('timed out', 'bad'); }, 4000);
+  } catch (e) {
+    reportIdb('threw: ' + e.name, 'bad');
+  }
+} else {
+  state.idb = 'absent';
+}
+
+if (has(navigator, 'storage') && navigator.storage && navigator.storage.estimate) {
+  try {
+    navigator.storage.estimate().then(function (est) {
+      var q = est.quota ? Math.round(est.quota / 1048576) + ' MB' : 'unknown';
+      row(sto, 'Storage quota', q);
+    });
+  } catch (e) {}
+}
+
+/* ---------- Audio codecs ---------- */
+
+var cod = el('sec-codec');
+var probe = document.createElement('audio');
+var codecs = [
+  ['MP3', 'audio/mpeg'],
+  ['AAC / M4A', 'audio/mp4; codecs="mp4a.40.2"'],
+  ['Ogg Vorbis', 'audio/ogg; codecs="vorbis"'],
+  ['Opus', 'audio/ogg; codecs="opus"'],
+  ['FLAC', 'audio/flac'],
+  ['HLS', 'application/vnd.apple.mpegurl']
+];
+var codecSummary = [];
+for (var i = 0; i < codecs.length; i++) {
+  var res = '';
+  try { res = probe.canPlayType(codecs[i][1]); } catch (e) { res = ''; }
+  var label = res === 'probably' ? 'probably' : (res === 'maybe' ? 'maybe' : 'no');
+  row(cod, codecs[i][0], label, res === 'probably' ? 'ok' : (res === 'maybe' ? 'warn' : 'bad'));
+  if (res) { codecSummary.push(codecs[i][0] + ':' + label); }
+}
+state.codecs = codecSummary.join(' ');
+
+/* ---------- JS and CSS features ---------- */
+
+var ft = el('sec-feat');
+
+/* MediaSession is expected to be missing: it was excluded from WebView deliberately.
+   Confirming its absence is the evidence that native playback is mandatory. */
+var msPresent = has(navigator, 'mediaSession');
+row(ft, 'navigator.mediaSession', msPresent ? 'present' : 'absent (expected)', msPresent ? 'ok' : 'warn');
+state.mediaSession = msPresent;
+
+function feat(name, present) {
+  row(ft, name, present ? 'yes' : 'no', present ? 'ok' : 'warn');
+  return present;
+}
+
+feat('fetch', typeof window.fetch === 'function');
+feat('Promise', typeof window.Promise === 'function');
+feat('AbortController', typeof window.AbortController === 'function');
+feat('Object.fromEntries', typeof Object.fromEntries === 'function');
+feat('Array.flat', typeof Array.prototype.flat === 'function');
+feat('String.replaceAll', typeof String.prototype.replaceAll === 'function');
+feat('Promise.allSettled', typeof window.Promise === 'function' && typeof Promise.allSettled === 'function');
+feat('globalThis', typeof window.globalThis !== 'undefined');
+feat('ResizeObserver', typeof window.ResizeObserver === 'function');
+feat('IntersectionObserver', typeof window.IntersectionObserver === 'function');
+
+function cssSupports(prop, val) {
+  try {
+    if (window.CSS && window.CSS.supports) { return window.CSS.supports(prop, val); }
+  } catch (e) {}
+  return false;
+}
+feat('CSS custom properties', cssSupports('--a', '0') || cssSupports('color', 'var(--a)'));
+feat('CSS grid', cssSupports('display', 'grid'));
+feat('Flexbox gap', cssSupports('gap', '1px'));
+feat('CSS clamp()', cssSupports('width', 'clamp(1px, 2px, 3px)'));
+feat('CSS aspect-ratio', cssSupports('aspect-ratio', '1/1'));
+
+/* ---------- Network test ---------- */
+
+el('btn-net').onclick = function () {
+  var btn = this;
+  btn.disabled = true;
+  btn.firstChild.nodeValue = 'Testing…';
+
+  var out = el('sec-net');
+  out.innerHTML = '';
+
+  var started = new Date().getTime();
+  var xhr = new XMLHttpRequest();
+  var done = false;
+
+  function finish(text, status, summary) {
+    if (done) { return; }
+    done = true;
+    row(out, 'Audius API', text, status);
+    state.net = summary;
+    btn.disabled = false;
+    btn.firstChild.nodeValue = 'Run network test again';
+    render();
+  }
+
+  try {
+    xhr.open('GET', 'https://api.audius.co/v1/tracks/search?query=phonk&limit=1&app_name=DotProbe', true);
+    xhr.onload = function () {
+      var ms = new Date().getTime() - started;
+      row(out, 'Round trip', ms + ' ms');
+      if (xhr.status >= 200 && xhr.status < 300) {
+        var title = '';
+        try {
+          var data = JSON.parse(xhr.responseText);
+          if (data && data.data && data.data.length) {
+            title = data.data[0].title || '';
+            row(out, 'Sample track', title);
+            row(out, 'Tags on it', data.data[0].tags || '(none)');
+            window.__dotTrackId = data.data[0].id;
+          }
+        } catch (e) {
+          row(out, 'JSON parse', 'failed', 'bad');
+        }
+        finish('reachable, CORS allowed', 'ok', 'ok ' + ms + 'ms');
+      } else {
+        finish('HTTP ' + xhr.status, 'bad', 'http' + xhr.status);
+      }
+    };
+    /* A CORS rejection and an offline radio both land here, indistinguishably. */
+    xhr.onerror = function () {
+      finish('unreachable or CORS blocked', 'bad', 'failed');
+    };
+    xhr.ontimeout = function () { finish('timed out', 'bad', 'timeout'); };
+    xhr.timeout = 15000;
+    xhr.send();
+  } catch (e) {
+    finish('threw: ' + e.name, 'bad', 'threw');
+  }
+};
+
+/* ---------- Background audio test ---------- */
+
+el('btn-audio').onclick = function () {
+  var btn = this;
+  btn.disabled = true;
+  btn.firstChild.nodeValue = 'Loading audio…';
+
+  var out = el('sec-audio');
+  out.innerHTML = '';
+
+  var trackId = window.__dotTrackId;
+  if (!trackId) {
+    row(out, 'Prerequisite', 'run the network test first', 'warn');
+    btn.disabled = false;
+    btn.firstChild.nodeValue = 'Start background audio test';
+    return;
+  }
+
+  var audio = new Audio();
+  audio.src = 'https://api.audius.co/v1/tracks/' + trackId + '/stream?app_name=DotProbe';
+  audio.loop = true;
+
+  var hiddenAt = 0;
+  var posAtHide = 0;
+  var measured = false;
+
+  function onVis() {
+    if (document.hidden) {
+      hiddenAt = new Date().getTime();
+      posAtHide = audio.currentTime;
+      return;
+    }
+    if (!hiddenAt || measured) { return; }
+    measured = true;
+
+    var wallSeconds = (new Date().getTime() - hiddenAt) / 1000;
+    var playedSeconds = audio.currentTime - posAtHide;
+    /* Tolerate loop wraparound rather than reporting a negative result. */
+    if (playedSeconds < 0 && audio.duration) { playedSeconds += audio.duration; }
+
+    var ratio = wallSeconds > 0 ? playedSeconds / wallSeconds : 0;
+    row(out, 'Screen was off for', wallSeconds.toFixed(1) + ' s');
+    row(out, 'Audio advanced', playedSeconds.toFixed(1) + ' s');
+
+    var verdict, st;
+    if (wallSeconds < 5) {
+      verdict = 'inconclusive — needs ~15 s'; st = 'warn';
+    } else if (ratio > 0.85) {
+      verdict = 'kept playing'; st = 'ok';
+    } else if (ratio > 0.15) {
+      verdict = 'throttled'; st = 'warn';
+    } else {
+      verdict = 'suspended'; st = 'bad';
+    }
+    row(out, 'Verdict', verdict, st);
+    state.bgaudio = verdict + ' (' + Math.round(ratio * 100) + '%)';
+
+    audio.pause();
+    btn.disabled = false;
+    btn.firstChild.nodeValue = 'Run background audio test again';
+    render();
+  }
+
+  if (document.addEventListener) {
+    document.addEventListener('visibilitychange', onVis, false);
+  }
+
+  audio.oncanplay = function () {
+    btn.firstChild.nodeValue = 'Playing — now lock the screen';
+  };
+  audio.onerror = function () {
+    row(out, 'Playback', 'failed to load stream', 'bad');
+    state.bgaudio = 'stream failed';
+    btn.disabled = false;
+    btn.firstChild.nodeValue = 'Start background audio test';
+    render();
+  };
+
+  try {
+    var p = audio.play();
+    /* play() returns undefined on older engines rather than a promise. */
+    if (p && typeof p.then === 'function') {
+      p['catch'](function (err) {
+        row(out, 'Playback blocked', err && err.name ? err.name : 'unknown', 'bad');
+        state.bgaudio = 'blocked';
+        btn.disabled = false;
+        btn.firstChild.nodeValue = 'Start background audio test';
+        render();
+      });
+    }
+    row(out, 'Status', 'playing — lock the screen now', 'ok');
+  } catch (e) {
+    row(out, 'Playback', 'threw: ' + e.name, 'bad');
+    btn.disabled = false;
+    btn.firstChild.nodeValue = 'Start background audio test';
+  }
+};
+
+/* ---------- Summary ---------- */
+
+function render() {
+  var lines = [
+    'DOT WATCH PROBE',
+    'engine    ' + state.engine + (isWebView ? ' (webview)' : ' (browser)'),
+    'android   ' + state.android,
+    'viewport  ' + state.viewport,
+    'screen    ' + (screen.width || '?') + 'x' + (screen.height || '?'),
+    'idb       ' + (state.idb || 'pending') + '   localStorage ' + (state.ls ? 'ok' : 'blocked'),
+    'mediaSess ' + (state.mediaSession ? 'present' : 'absent'),
+    'codecs    ' + state.codecs,
+    'network   ' + state.net,
+    'bg audio  ' + state.bgaudio
+  ];
+  el('summary').value = lines.join('\n');
+}
+render();
+
+el('btn-copy').onclick = function () {
+  var t = el('summary');
+  try {
+    t.removeAttribute('readonly');
+    t.focus();
+    t.setSelectionRange(0, t.value.length);
+    document.execCommand('copy');
+    t.setAttribute('readonly', 'readonly');
+    this.firstChild.nodeValue = 'Copied';
+  } catch (e) {
+    this.firstChild.nodeValue = 'Select the text above and copy';
+  }
+};
+</script>

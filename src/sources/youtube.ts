@@ -1,0 +1,570 @@
+/**
+ * YouTube source — official APIs only.
+ *
+ * Search and metadata come from the YouTube Data API v3. Playback is handled by
+ * the IFrame Player (see src/playback/youtube.ts), which is Google's own
+ * embedded player. Nothing here extracts or proxies a media stream.
+ *
+ * Quota is the binding constraint and shapes the whole design. The free tier is
+ * 10,000 units/day, and costs are wildly uneven:
+ *
+ *   search.list          100 units   → ~100 searches per day, total
+ *   videos.list            1 unit    → up to 50 videos per call
+ *   videos.list(chart)     1 unit    → trending, basically free
+ *
+ * So: searches are cached aggressively, trending is preferred for feed filling,
+ * and metadata enrichment batches up to 50 ids into a single 1-unit call.
+ */
+
+import * as store from '../store.ts';
+import { blockReason } from './filter.ts';
+import type { BrowseKind, MusicSource, SourceCapabilities, Track, TrackId } from '../types.ts';
+
+const API = 'https://www.googleapis.com/youtube/v3';
+/** Category 10 is Music. Keeps podcasts and vlogs out of a music feed. */
+const MUSIC_CATEGORY = '10';
+const TIMEOUT_MS = 12000;
+/**
+ * Searches are quota-expensive, so cache hard. A week is deliberate: at 100
+ * units a search, repeating one is the single easiest way to burn the day's
+ * allowance, and music search results barely change day to day.
+ */
+const SEARCH_TTL_MS = 7 * 24 * 60 * 60 * 1000;
+/** Costs in quota units, as published by Google. */
+const COST_SEARCH = 100;
+const COST_LIST = 1;
+const TRENDING_TTL_MS = 60 * 60 * 1000;
+
+interface YtThumb { url?: string }
+interface YtSnippet {
+  title?: string;
+  channelTitle?: string;
+  channelId?: string;
+  publishedAt?: string;
+  tags?: string[];
+  thumbnails?: { medium?: YtThumb; high?: YtThumb; default?: YtThumb };
+}
+interface YtVideo {
+  id?: string | { videoId?: string };
+  snippet?: YtSnippet;
+  contentDetails?: { duration?: string };
+  statistics?: { viewCount?: string };
+  /** `madeForKids` is YouTube's own designation, and the best signal there is. */
+  status?: { madeForKids?: boolean };
+}
+
+/** ISO-8601 durations, e.g. PT3M45S. */
+export function parseIsoDuration(iso: string | undefined): number {
+  if (!iso) return 0;
+  const m = /^P(?:(\d+)D)?T(?:(\d+)H)?(?:(\d+)M)?(?:(\d+)S)?$/.exec(iso);
+  if (!m) return 0;
+  const days = Number(m[1] ?? 0);
+  const hours = Number(m[2] ?? 0);
+  const mins = Number(m[3] ?? 0);
+  const secs = Number(m[4] ?? 0);
+  return days * 86400 + hours * 3600 + mins * 60 + secs;
+}
+
+/**
+ * Every first-run mistake with a Data API key produces a different, and rather
+ * unhelpful, error. These are the four that actually happen, with the fix in
+ * the message — the alternative is a key that silently returns nothing.
+ *
+ * Shapes taken from live responses: an invalid key is a 400 carrying
+ * `API_KEY_INVALID` in `error.details[].reason`, while the 403s put their reason
+ * in `error.errors[].reason`.
+ */
+export function describeKeyError(status: number, body: unknown): string {
+  const error = (body as { error?: { message?: string; errors?: { reason?: string }[]; details?: { reason?: string }[] } } | null)?.error;
+  const reasons = [
+    ...(error?.errors ?? []).map((e) => e.reason),
+    ...(error?.details ?? []).map((d) => d.reason),
+  ].filter((r): r is string => typeof r === 'string');
+  const has = (needle: string): boolean => reasons.some((r) => r.toLowerCase().indexOf(needle.toLowerCase()) >= 0);
+
+  if (has('API_KEY_INVALID') || has('keyInvalid')) {
+    return 'That key is not valid — check for a stray space or a missing character.';
+  }
+  if (has('accessNotConfigured') || has('SERVICE_DISABLED')) {
+    return 'The key is real, but YouTube Data API v3 is not enabled on its project. Enable it in the Google Cloud console, wait a minute, then save again.';
+  }
+  if (has('ipRefererBlocked') || has('referer') || has('API_KEY_HTTP_REFERRER_BLOCKED')) {
+    return 'That key is restricted to certain websites and this page is not one of them. Remove the restriction, or add this address to the allowed referrers.';
+  }
+  if (has('quotaExceeded') || has('dailyLimitExceeded') || has('RATE_LIMIT_EXCEEDED')) {
+    return 'That key is out of quota for today. The free tier is 10,000 units and one search costs 100; it resets at midnight Pacific.';
+  }
+  if (status === 0) return 'Could not reach the YouTube API — check the connection.';
+  return error?.message ?? ('YouTube API error ' + status);
+}
+
+function videoIdOf(id: TrackId): string {
+  return id.startsWith('youtube:') ? id.slice('youtube:'.length) : id;
+}
+
+export interface ParsedYouTubeLink {
+  kind: 'playlist' | 'video';
+  id: string;
+}
+
+export interface UnsupportedYouTubeLink {
+  kind: 'unsupported';
+  /** Shown to the person verbatim, so it says what to paste instead. */
+  reason: string;
+}
+
+export type YouTubeInput = ParsedYouTubeLink | UnsupportedYouTubeLink;
+
+type ListKind = 'cueable' | 'mix' | 'private';
+
+/**
+ * Not every `list=` id is something the embedded player can open, and the
+ * difference is invisible in the URL. Measured against the real IFrame player:
+ *
+ *   OLAK5uy_…    YouTube Music album       → 13/13 ids
+ *   RDCLAK5uy_…  YouTube Music playlist    → 137 ids
+ *   PL…          ordinary playlist         → 120 ids
+ *   RDAMVM…      the auto-mix that rides along on a shared song → nothing, ever
+ *   LM           Liked Music               → nothing; it is private to an account
+ *
+ * So `RD` alone does not mean unreadable — RDCLAK is how YouTube Music names
+ * its curated playlists and those read fine. Everything else under RD is a
+ * generated radio, which the player will not enumerate for an embed.
+ */
+function classifyList(listId: string): ListKind {
+  if (listId === 'LM' || listId === 'WL' || listId.startsWith('LL')) return 'private';
+  if (listId.startsWith('RD') && !listId.startsWith('RDCLAK')) return 'mix';
+  return 'cueable';
+}
+
+const PRIVATE_LIST_REASON =
+  'That is a private YouTube Music list (Liked Music, Watch Later or your library), ' +
+  'so nothing outside your account can read it. Open a playlist or album and copy that link instead.';
+
+const MIX_LIST_REASON =
+  'That link points at a generated radio mix, which the player will not open for an embed. ' +
+  'Paste an album, a playlist, or a single song instead.';
+
+/**
+ * Accepts whatever a person actually pastes: a full watch URL, a playlist URL,
+ * a youtu.be short link, a music.youtube.com link, or a bare id.
+ *
+ * A watch URL that also carries `list` is treated as a playlist, since that is
+ * nearly always the intent — unless the list is one the player cannot read, and
+ * YouTube Music's Share always attaches one of those (`&list=RDAMVM<video id>`).
+ * In that case the song itself is right there in the URL, so take the song.
+ */
+export function parseYouTubeInput(input: string): YouTubeInput | null {
+  const text = input.trim();
+  if (!text) return null;
+
+  const video =
+    /[?&]v=([A-Za-z0-9_-]{11})/.exec(text)?.[1] ??
+    /youtu\.be\/([A-Za-z0-9_-]{11})/.exec(text)?.[1] ??
+    /youtube\.com\/shorts\/([A-Za-z0-9_-]{11})/.exec(text)?.[1] ??
+    null;
+
+  const list = /[?&]list=([A-Za-z0-9_-]+)/.exec(text)?.[1] ?? null;
+
+  if (list) {
+    const kind = classifyList(list);
+    if (kind === 'cueable') return { kind: 'playlist', id: list };
+    if (video) return { kind: 'video', id: video };
+    return { kind: 'unsupported', reason: kind === 'private' ? PRIVATE_LIST_REASON : MIX_LIST_REASON };
+  }
+
+  if (video) return { kind: 'video', id: video };
+
+  // Album and artist pages on music.youtube.com are browse ids (MPREb_…, UC…),
+  // which are not playlists and never will be. Say so rather than shrugging.
+  if (/music\.youtube\.com\/(browse|channel|immersive)/.test(text)) {
+    return {
+      kind: 'unsupported',
+      reason:
+        'That is a YouTube Music browse link, which is not a playlist. ' +
+        'Open the album or playlist, hit Share, and paste the link that ends in ?list=…',
+    };
+  }
+
+  // Bare ids: playlists start with PL/UU/OL/RD and are longer than a video id.
+  if (/^(PL|UU|OL|RD|FL|LL)[A-Za-z0-9_-]{10,}$/.test(text)) {
+    const kind = classifyList(text);
+    if (kind === 'cueable') return { kind: 'playlist', id: text };
+    return { kind: 'unsupported', reason: kind === 'private' ? PRIVATE_LIST_REASON : MIX_LIST_REASON };
+  }
+  if (/^[A-Za-z0-9_-]{11}$/.test(text)) return { kind: 'video', id: text };
+
+  return null;
+}
+
+/** A track we know exists but have not yet heard a title for. */
+function placeholderTrack(videoId: string, tags: string[], label: string, index: number): Track {
+  return {
+    id: 'youtube:' + videoId,
+    sourceId: 'youtube',
+    title: label + ' · ' + (index + 1),
+    artist: 'YouTube',
+    duration: 0,
+    artworkUrl: 'https://i.ytimg.com/vi/' + videoId + '/mqdefault.jpg',
+    tags,
+  };
+}
+
+/**
+ * Channel names are noisy as artist names — "Artist - Topic" is YouTube's
+ * auto-generated music channel convention and the suffix is not part of the name.
+ */
+function cleanArtist(channelTitle: string | undefined): string {
+  if (!channelTitle) return 'Unknown';
+  return channelTitle.replace(/\s*-\s*Topic$/i, '').trim() || 'Unknown';
+}
+
+function toTrack(video: YtVideo): Track | null {
+  const rawId = typeof video.id === 'string' ? video.id : video.id?.videoId;
+  if (!rawId || !video.snippet) return null;
+
+  const snippet = video.snippet;
+  const views = Number(video.statistics?.viewCount ?? '');
+
+  return {
+    id: 'youtube:' + rawId,
+    sourceId: 'youtube',
+    title: snippet.title ?? 'Untitled',
+    artist: cleanArtist(snippet.channelTitle),
+    artistId: snippet.channelId,
+    duration: parseIsoDuration(video.contentDetails?.duration),
+    artworkUrl: snippet.thumbnails?.high?.url ?? snippet.thumbnails?.medium?.url,
+    // Uploader-supplied tags. Often absent, but when present they are exactly
+    // the descriptors the recommender wants.
+    tags: Array.isArray(snippet.tags) ? snippet.tags.slice(0, 15) : [],
+    madeForKids: video.status?.madeForKids,
+    playCount: Number.isFinite(views) ? views : undefined,
+    releaseYear: snippet.publishedAt ? Number(snippet.publishedAt.slice(0, 4)) : undefined,
+  };
+}
+
+export class YouTubeSource implements MusicSource {
+  readonly id = 'youtube';
+  readonly displayName = 'YouTube';
+  readonly capabilities: SourceCapabilities = {
+    search: true,
+    onDemand: true,
+    // Playback is through Google's embedded player, so nothing is downloadable.
+    downloadable: false,
+    browse: true,
+  };
+
+  /**
+   * Locally known videos, keyed by track id. Without the Data API this is the
+   * entire catalogue: it grows from the playlists you add and fills in real
+   * titles as the player reports them.
+   */
+  private catalog: Record<string, Track> = store.loadYtCatalog();
+  /** How many results the last read dropped, for the "N hidden" note. */
+  lastHidden = 0;
+
+  /** Read lazily so pasting a key in Settings takes effect without a reload. */
+  private get apiKey(): string {
+    return store.loadPrefs().youtubeApiKey.trim();
+  }
+
+  /** True when live search is available. Playback never needs this. */
+  get configured(): boolean {
+    return this.apiKey.length > 0;
+  }
+
+  /** Why the last keyed call failed, if it did. Cleared by the next success. */
+  lastKeyProblem: string | null = null;
+
+  /**
+   * Checks a key with the cheapest call there is — videos.list costs one unit —
+   * and returns null when it works, or a sentence saying what to fix.
+   */
+  async verifyKey(candidate?: string): Promise<string | null> {
+    const key = (candidate ?? this.apiKey).trim();
+    if (!key) return 'No key set.';
+
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), TIMEOUT_MS);
+    try {
+      const res = await fetch(
+        `${API}/videos?part=id&id=ZSM3w1v-A_Y&key=${encodeURIComponent(key)}`,
+        { signal: controller.signal },
+      );
+      if (res.ok) {
+        this.lastKeyProblem = null;
+        return null;
+      }
+      const problem = describeKeyError(res.status, await res.json().catch(() => null));
+      this.lastKeyProblem = problem;
+      return problem;
+    } catch {
+      const problem = describeKeyError(0, null);
+      this.lastKeyProblem = problem;
+      return problem;
+    } finally {
+      clearTimeout(timer);
+    }
+  }
+
+  /** Everything Dot knows about locally, newest playlists first. */
+  knownTracks(): Track[] {
+    return Object.values(this.catalog);
+  }
+
+  /**
+   * Records the real title and channel the player reported for a video.
+   * This is what turns a placeholder into a proper track, and it is the only
+   * keyless route to a video's metadata.
+   */
+  /**
+   * Returns null when the track turns out to be filtered content. Some titles
+   * are only knowable once the player has loaded the video, so this is the
+   * last place a children's upload can be caught — the app skips on null.
+   */
+  ingest(videoId: string, title: string, author: string, tags: string[] = []): Track | null {
+    const level = store.loadPrefs().filterLevel;
+    const reason = blockReason({ title, artist: author, tags }, level);
+    if (reason) {
+      console.info('filtered on play:', reason, '—', title);
+      return null;
+    }
+    const id = 'youtube:' + videoId;
+    const existing = this.catalog[id];
+    const merged: Track = {
+      id,
+      sourceId: 'youtube',
+      title,
+      artist: author.replace(/\s*-\s*Topic$/i, '').trim() || 'YouTube',
+      duration: existing?.duration ?? 0,
+      artworkUrl: existing?.artworkUrl ?? 'https://i.ytimg.com/vi/' + videoId + '/mqdefault.jpg',
+      // Keep whatever tags the playlist contributed; they are the taste signal.
+      tags: Array.from(new Set([...(existing?.tags ?? []), ...tags])),
+    };
+    this.catalog[id] = merged;
+    store.saveYtCatalog(this.catalog);
+    return merged;
+  }
+
+  /** Registers the ids read out of a playlist, tagged with that playlist's tags. */
+  registerPlaylist(videoIds: string[], tags: string[], label: string): Track[] {
+    const out: Track[] = [];
+    videoIds.forEach((videoId, index) => {
+      const id = 'youtube:' + videoId;
+      const existing = this.catalog[id];
+      if (existing) {
+        // Already heard: keep the real title, just widen its tags.
+        existing.tags = Array.from(new Set([...existing.tags, ...tags]));
+        out.push(existing);
+      } else {
+        const track = placeholderTrack(videoId, tags, label, index);
+        this.catalog[id] = track;
+        out.push(track);
+      }
+    });
+    store.saveYtCatalog(this.catalog);
+    return out;
+  }
+
+  private localSearch(query: string, limit: number): Track[] {
+    const needle = query.toLowerCase();
+    return this.applyFilter(this.knownTracks())
+      .filter(
+        (t) =>
+          t.title.toLowerCase().indexOf(needle) >= 0 ||
+          t.artist.toLowerCase().indexOf(needle) >= 0 ||
+          t.tags.some((tag) => tag.toLowerCase().indexOf(needle) >= 0),
+      )
+      .slice(0, limit);
+  }
+
+  /**
+   * `cost` is the endpoint's quota price. It is recorded before the request
+   * rather than after, so a failed call still counts — Google charges for
+   * those too, and a ledger that undercounts is worse than none.
+   */
+  private async getJson(path: string, cost: number): Promise<unknown | null> {
+    const key = this.apiKey;
+    if (!key) return null;
+    store.quotaSpend(cost);
+
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), TIMEOUT_MS);
+    try {
+      const res = await fetch(`${API}${path}&key=${encodeURIComponent(key)}`, {
+        signal: controller.signal,
+      });
+      if (!res.ok) {
+        // Quota and key-restriction failures land here mid-session, long after
+        // the key was saved, so the reason has to survive for the UI to show.
+        this.lastKeyProblem = describeKeyError(res.status, await res.json().catch(() => null));
+        console.warn('youtube api', res.status, path.split('?')[0], this.lastKeyProblem);
+        return null;
+      }
+      this.lastKeyProblem = null;
+      return await res.json();
+    } catch {
+      return null;
+    } finally {
+      clearTimeout(timer);
+    }
+  }
+
+  /**
+   * Turns ids into full tracks. One unit for up to 50 videos, so this is the
+   * cheap call and is always worth making rather than trusting search snippets,
+   * which carry no duration and no tags.
+   */
+  /**
+   * The single gate every API-sourced track passes through. Duration bounds
+   * catch mixes and album rips; the content filter catches children's uploads
+   * and non-music, using YouTube's own madeForKids flag where it exists.
+   */
+  private playable(track: Track): boolean {
+    // Anything over ~15 minutes in a music feed is a mix or a full album upload.
+    return track.duration > 0 && track.duration < 900;
+  }
+
+  /**
+   * Content filtering happens here, on the way out, never before caching.
+   *
+   * Caching filtered results was a real bug: the cache exists to save quota,
+   * but it also froze the filter decision, so changing the strictness setting
+   * did nothing to anything already fetched. Cache the raw catalogue, decide
+   * what to show on every read.
+   */
+  private applyFilter(tracks: Track[]): Track[] {
+    const level = store.loadPrefs().filterLevel;
+    if (level === 'off') {
+      this.lastHidden = 0;
+      return tracks;
+    }
+
+    const out: Track[] = [];
+    for (const track of tracks) {
+      const reason = blockReason(
+        {
+          title: track.title,
+          artist: track.artist,
+          tags: track.tags,
+          madeForKids: track.madeForKids,
+        },
+        level,
+      );
+      if (reason) console.info('filtered:', reason, '—', track.title, '·', track.artist);
+      else out.push(track);
+    }
+    this.lastHidden = tracks.length - out.length;
+    return out;
+  }
+
+  private async hydrate(ids: string[]): Promise<Track[]> {
+    if (ids.length === 0) return [];
+    const payload = await this.getJson(
+      `/videos?part=snippet,contentDetails,statistics,status&maxResults=50&id=${ids.slice(0, 50).join(',')}`,
+      COST_LIST,
+    );
+    const items = (payload as { items?: YtVideo[] } | null)?.items;
+    if (!Array.isArray(items)) return [];
+
+    const out: Track[] = [];
+    for (const item of items) {
+      const track = toTrack(item);
+      if (track && this.playable(track)) out.push(track);
+    }
+    return out;
+  }
+
+  async search(query: string, limit = 20): Promise<Track[]> {
+    if (!query.trim()) return [];
+    // Without a key, search the playlists you have added rather than the web.
+    if (!this.configured) return this.localSearch(query, limit);
+
+    // A search costs the same 100 units whether it returns 5 results or 50,
+    // so always buy the full 50 and slice locally. The cache key ignores the
+    // caller's limit for the same reason — one purchase serves every caller.
+    // v2: entries written before filtering moved to read time hold
+    // already-filtered tracks with no madeForKids flag, so they are discarded.
+    const cacheKey = 'yt.s2.' + query.toLowerCase();
+    const cached = store.cacheGet<Track[]>(cacheKey, SEARCH_TTL_MS);
+    if (cached) return this.applyFilter(cached).slice(0, limit);
+
+    const payload = await this.getJson(
+      `/search?part=snippet&type=video&videoCategoryId=${MUSIC_CATEGORY}` +
+        `&maxResults=50&q=${encodeURIComponent(query)}`,
+      COST_SEARCH,
+    );
+    const items = (payload as { items?: YtVideo[] } | null)?.items;
+    if (!Array.isArray(items)) return [];
+
+    const ids = items
+      .map((i) => (typeof i.id === 'string' ? i.id : i.id?.videoId))
+      .filter((id): id is string => typeof id === 'string');
+
+    const tracks = await this.hydrate(ids);
+    if (tracks.length > 0) store.cacheSet(cacheKey, tracks);
+    return this.applyFilter(tracks).slice(0, limit);
+  }
+
+  async getTrack(id: TrackId): Promise<Track | null> {
+    if (!this.configured) return this.catalog[id] ?? null;
+    const tracks = await this.hydrate([videoIdOf(id)]);
+    return tracks[0] ?? this.catalog[id] ?? null;
+  }
+
+  /**
+   * There is no stream URL to resolve — playback goes through the IFrame
+   * player, which takes a video id. Returning the bare id keeps the MusicSource
+   * contract intact; the player routes YouTube tracks to its own engine.
+   */
+  async resolveStreamUrl(id: TrackId): Promise<string | null> {
+    if (!id.startsWith('youtube:')) return null;
+    return videoIdOf(id);
+  }
+
+  async browse(kind: BrowseKind, key?: string, limit = 20): Promise<Track[]> {
+    // Keyless mode: the feed is drawn from the playlists you added.
+    if (!this.configured) {
+      const known = this.knownTracks();
+      if (kind === 'trending' || !key) return known.slice(0, limit);
+      const needle = key.toLowerCase();
+      return known
+        .filter((t) => t.tags.some((tag) => tag.toLowerCase() === needle))
+        .slice(0, limit);
+    }
+
+    // Trending costs 1 unit against search's 100, so the feed leans on it.
+    if (kind === 'trending' || !key) {
+      const cached = store.cacheGet<Track[]>('yt.trending2', TRENDING_TTL_MS);
+      if (cached) return this.applyFilter(cached).slice(0, limit);
+
+      const payload = await this.getJson(
+        `/videos?part=snippet,contentDetails,statistics,status&chart=mostPopular` +
+          `&videoCategoryId=${MUSIC_CATEGORY}&maxResults=${Math.min(50, limit)}`,
+        COST_LIST,
+      );
+      const items = (payload as { items?: YtVideo[] } | null)?.items;
+      if (!Array.isArray(items)) return [];
+
+      const out: Track[] = [];
+      for (const item of items) {
+        const track = toTrack(item);
+        if (track && this.playable(track)) out.push(track);
+      }
+      if (out.length > 0) store.cacheSet('yt.trending2', out);
+      return this.applyFilter(out).slice(0, limit);
+    }
+
+    // The feed refills on several tags at once. Spending 100 units per tag
+    // would drain the day in a few refreshes, so prefer what playlists have
+    // already taught us and only buy a search when the pool is genuinely thin.
+    const needle = key.toLowerCase();
+    const known = this.knownTracks().filter((t) =>
+      t.tags.some((tag) => tag.toLowerCase() === needle),
+    );
+    if (known.length >= limit) return known.slice(0, limit);
+
+    const bought = await this.search(key, limit);
+    return bought.length > 0 ? bought : known;
+  }
+}

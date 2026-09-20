@@ -1,0 +1,19 @@
+{
+  "name": "dot",
+  "version": "0.1.0",
+  "private": true,
+  "description": "A music player for a custom-firmware Android watch",
+  "type": "module",
+  "scripts": {
+    "build": "node scripts/build.mjs",
+    "dev": "node scripts/build.mjs --watch --serve",
+    "typecheck": "tsc --noEmit",
+    "test": "node --test --experimental-strip-types test/**/*.test.ts",
+    "sim": "node --experimental-strip-types test/sim/run.ts"
+  },
+  "devDependencies": {
+    "@types/node": "^24.13.6",
+    "esbuild": "^0.25.0",
+    "typescript": "^5.7.0"
+  }
+}
