@@ -40,7 +40,9 @@ const KEY = {
   history: 'dot.history.v1',
   recent: 'dot.recent.v1',
   liked: 'dot.likedtracks.v1',
-  ytCatalog: 'dot.ytcatalog.v1',
+  // v2: v1 entries were classified without the API's category or duration,
+  // so nearly all of them say "video" and would keep starving the feed.
+  ytCatalog: 'dot.ytcatalog.v2',
   quota: 'dot.quota.v1',
   hidden: 'dot.hidden.v1',
   channels: 'dot.channels.v1',

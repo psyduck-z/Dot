@@ -242,7 +242,13 @@ export class YouTubeSource implements MusicSource {
    * are only knowable once the player has loaded the video, so this is the
    * last place a children's upload can be caught — the app skips on null.
    */
-  ingest(videoId: string, title: string, author: string, tags: string[] = []): Track | null {
+  ingest(
+    videoId: string,
+    title: string,
+    author: string,
+    tags: string[] = [],
+    known?: Track['kind'],
+  ): Track | null {
     const level = store.loadPrefs().filterLevel;
     const reason = blockReason({ title, artist: author, tags }, level);
     if (reason) {
@@ -260,7 +266,13 @@ export class YouTubeSource implements MusicSource {
       artworkUrl: existing?.artworkUrl ?? 'https://i.ytimg.com/vi/' + videoId + '/mqdefault.jpg',
       // A real title finally allows classification. Anything the API already
       // told us is richer than what can be inferred here, so it wins.
+      // The caller's kind comes from the API, which knows the category, the
+      // duration and the orientation. Classifying here knows none of those —
+      // only a title — so it answered "video" for almost everything and wrote
+      // that into the catalogue permanently, which is what emptied the Music
+      // feed. Guess only when nothing better is offered.
       kind:
+        known ??
         existing?.kind ??
         classifyKind({ title, artist: author, tags, duration: existing?.duration ?? 0 }),
       // Keep whatever tags the playlist contributed; they are the taste signal.

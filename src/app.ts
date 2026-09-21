@@ -1701,9 +1701,13 @@ export class App {
       // whole point: search.list costs 100 units and playlists cost nothing.
       const free = this.youtube.catalogTracks(200);
 
-      // Only pay for candidates when the local pool is too thin to rank well.
+      // Count only what the feed can actually use. Measuring the floor against
+      // the raw catalogue meant a pile of unusable entries read as a healthy
+      // pool, so nothing was ever bought and the feed starved.
+      const usable = free.filter((t) => (t.kind ?? 'music') !== 'video').length;
+
       let bought: Track[] = [];
-      if (free.length < CANDIDATE_FLOOR) {
+      if (usable < CANDIDATE_FLOOR) {
         const tags = this.prefs.musicTags.length > 0 ? this.prefs.musicTags : ['phonk'];
         const picks = tags.slice().sort(() => Math.random() - 0.5).slice(0, 4);
 
@@ -1894,7 +1898,13 @@ export class App {
     for (let attempt = 0; attempt < 6; attempt++) {
       const data = this.ytEngine.videoData();
       if (data && data.title) {
-        const updated = this.youtube.ingest(data.videoId, data.title, data.author, track.tags);
+        const updated = this.youtube.ingest(
+          data.videoId,
+          data.title,
+          data.author,
+          track.tags,
+          track.kind,
+        );
         if (!updated) {
           // Only now, with the real title, is this recognisable as filtered
           // content. Move on rather than making the person skip it by hand,
