@@ -111,13 +111,6 @@ export function markBootSuccessful(): void {
   remove(KEY.sentinel);
 }
 
-/** Drops any downloaded build and goes back to the one inside the APK. */
-export function revertToPackaged(): void {
-  remove(KEY.bundle);
-  remove(KEY.version);
-  remove(KEY.sentinel);
-}
-
 function resolve(base: string, path: string): string {
   if (/^https?:\/\//.test(path)) return path;
   return base.replace(/\/[^/]*$/, '/') + path.replace(/^\.?\//, '');

@@ -20,7 +20,6 @@ import * as store from './store.ts';
 import {
   checkForUpdate,
   isRunningDownloaded,
-  revertToPackaged,
   runningVersion,
   setUpdateUrl,
   updateUrl,
@@ -1358,15 +1357,6 @@ export class App {
     reloadBtn.addEventListener('click', () => window.location.reload());
     host.appendChild(reloadBtn);
     host.appendChild(updateState);
-
-    if (isRunningDownloaded()) {
-      const revert = button('danger', 'Go back to the built-in version');
-      revert.addEventListener('click', () => {
-        revertToPackaged();
-        window.location.reload();
-      });
-      host.appendChild(revert);
-    }
 
     host.appendChild(el('h2', 'shelf-title', 'Taste model'));
     this.statsBox = el('div', 'stats');
