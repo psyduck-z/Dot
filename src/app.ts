@@ -170,6 +170,8 @@ export class App {
   private seeking = false;
   /** Tags of the track playing before this one, for transition scoring. */
   private playingPrevTags: string[] = [];
+  /** Set when a render was skipped because Now Playing was covering it. */
+  private homeStale = false;
   /** Surfaces already auto-fetched once, so an empty one cannot loop. */
   private autoFilled = new Set<Surface>();
   /**
@@ -456,6 +458,15 @@ export class App {
   }
 
   private renderHome(): void {
+    // Now Playing covers the whole screen, and most renders happen while a
+    // track changes — which is exactly when it is open. Rebuilding twenty rows
+    // and their images underneath it was pure cost on hardware with none to
+    // spare, so it waits until there is something to see.
+    if (this.np && this.np.classList.contains('open')) {
+      this.homeStale = true;
+      return;
+    }
+    this.homeStale = false;
     this.homeGreeting.textContent = this.greetingText();
     clear(this.homeBody);
 
@@ -1418,6 +1429,14 @@ export class App {
 
     this.attachShortsSwipe();
 
+    // Deferred writes have to land before the process does. pagehide is the
+    // reliable one on mobile; visibilitychange covers being backgrounded
+    // without being closed.
+    window.addEventListener('pagehide', () => store.flushWrites());
+    document.addEventListener('visibilitychange', () => {
+      if (document.hidden) store.flushWrites();
+    });
+
     this.root.appendChild(this.np);
   }
 
@@ -1612,6 +1631,7 @@ export class App {
 
   private closeNowPlaying(): void {
     this.np.classList.remove('open');
+    if (this.homeStale) this.renderHome();
   }
 
   /* ------------------------------------------------------------------ rendering */
@@ -1880,8 +1900,8 @@ export class App {
     if (!track) return;
 
     this.model.update(featurize(track, event.contextBucket, this.playingPrevTags), labelFor(event));
-    store.saveModel(this.model);
-    store.appendEvent(event);
+    store.saveModelSoon(this.model);
+    store.appendEventSoon(event);
 
     // Some uploads cannot be played outside YouTube at all, which the player
     // reports as an error and then sits on a dead screen. Move past it, and
@@ -1913,8 +1933,8 @@ export class App {
     if (!event || !track) return;
 
     this.model.update(featurize(track, event.contextBucket), labelFor(event));
-    store.saveModel(this.model);
-    store.appendEvent(event);
+    store.saveModelSoon(this.model);
+    store.appendEventSoon(event);
 
     if (outcome === 'liked') {
       if (this.likes.has(track.id)) {

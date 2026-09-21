@@ -106,7 +106,64 @@ export function saveModel(model: TasteModel): void {
   write(KEY.model, model.toJSON());
 }
 
+/**
+ * Defers the model and event writes.
+ *
+ * Between them these were the heaviest thing happening per track: the model is
+ * two thousand floats serialised to JSON, and the event log rewrites its whole
+ * capped history. Neither needs to be on disk the instant it changes — losing
+ * the last few seconds of learning to a crash is a far smaller cost than
+ * stalling playback on every skip. Coalesced here and flushed on a timer, or
+ * immediately when the page is going away.
+ */
+const WRITE_DELAY_MS = 4000;
+let pendingModel: TasteModel | null = null;
+let pendingEvents: PlayEvent[] | null = null;
+let writeTimer: ReturnType<typeof setTimeout> | null = null;
+
+function scheduleFlush(): void {
+  if (writeTimer) return;
+  writeTimer = setTimeout(() => {
+    writeTimer = null;
+    flushWrites();
+  }, WRITE_DELAY_MS);
+}
+
+export function saveModelSoon(model: TasteModel): void {
+  pendingModel = model;
+  scheduleFlush();
+}
+
+export function appendEventSoon(event: PlayEvent): void {
+  if (!pendingEvents) pendingEvents = loadEvents();
+  pendingEvents.push(event);
+  if (pendingEvents.length > MAX_EVENTS) pendingEvents = pendingEvents.slice(-MAX_EVENTS);
+  scheduleFlush();
+}
+
+export function flushWrites(): void {
+  if (pendingModel) {
+    write(KEY.model, pendingModel.toJSON());
+    pendingModel = null;
+  }
+  if (pendingEvents) {
+    write(KEY.events, pendingEvents);
+    pendingEvents = null;
+  }
+}
+
+/**
+ * Preferences and history are read constantly — the filter checks prefs for
+ * every track, the API key getter checks them for every request, and a refill
+ * reads history several times. Each of those was a fresh JSON.parse of the
+ * stored blob. They are small, so keeping them in memory costs nothing and
+ * removes a pile of parsing from the hot path.
+ */
+let prefsCache: Prefs | null = null;
+let historyCache: TrackId[] | null = null;
+
 export function loadPrefs(): Prefs {
+  if (prefsCache) return prefsCache;
   const stored = read<Partial<Prefs> & { seedTags?: string[] }>(KEY.prefs, {});
   // Merge rather than replace, so a prefs shape added later gets a default
   // instead of undefined.
@@ -117,10 +174,12 @@ export function loadPrefs(): Prefs {
   if (merged.musicTags.length === 0 && Array.isArray(stored.seedTags)) {
     merged.musicTags = stored.seedTags;
   }
+  prefsCache = merged;
   return merged;
 }
 
 export function savePrefs(prefs: Prefs): void {
+  prefsCache = prefs;
   write(KEY.prefs, prefs);
 }
 
@@ -150,13 +209,15 @@ export function appendEvent(event: PlayEvent): PlayEvent[] {
  * allow repeats.
  */
 export function loadHistory(): TrackId[] {
-  return read<TrackId[]>(KEY.history, []);
+  if (!historyCache) historyCache = read<TrackId[]>(KEY.history, []);
+  return historyCache;
 }
 
 export function pushHistory(id: TrackId): TrackId[] {
   const history = loadHistory().filter((h) => h !== id);
   history.push(id);
   const trimmed = history.length > MAX_HISTORY ? history.slice(-MAX_HISTORY) : history;
+  historyCache = trimmed;
   write(KEY.history, trimmed);
   return trimmed;
 }
@@ -356,6 +417,10 @@ export function cacheSet<T>(key: string, value: T): void {
 
 /** Wipes everything Dot has stored. Used by the reset control in Settings. */
 export function clearAll(): void {
+  prefsCache = null;
+  historyCache = null;
+  pendingModel = null;
+  pendingEvents = null;
   for (const key of Object.values(KEY)) {
     try {
       window.localStorage.removeItem(key);
