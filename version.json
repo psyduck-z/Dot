@@ -1,5 +1,5 @@
 {
-  "version": "77b2ded",
+  "version": "ca17854",
   "bundle": "bundle.js",
-  "notes": "Put the start timing under the controls where it is actually visible"
+  "notes": "Attack the parts of the 6.8s start that are reachable"
 }
