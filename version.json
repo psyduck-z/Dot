@@ -1,5 +1,5 @@
 {
-  "version": "61eefe9",
+  "version": "01b57f2",
   "bundle": "bundle.js",
-  "notes": "Say why a surface is empty instead of only that it is"
+  "notes": "Report where the feed's candidates went"
 }
