@@ -1,5 +1,5 @@
 {
-  "version": "feb2346",
+  "version": "17c28e2",
   "bundle": "bundle.js",
-  "notes": "Stop interrogating the player for things nobody is looking at"
+  "notes": "Update the logo"
 }
