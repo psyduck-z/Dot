@@ -1,5 +1,5 @@
 {
-  "version": "94f1b1c",
+  "version": "684ec39",
   "bundle": "bundle.js",
-  "notes": "Time the two halves of a track start separately"
+  "notes": "Fix double-tap dimming, and put the start timing where it can be read"
 }
