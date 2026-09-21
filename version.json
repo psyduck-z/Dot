@@ -1,5 +1,5 @@
 {
-  "version": "56944a1",
+  "version": "77b2ded",
   "bundle": "bundle.js",
-  "notes": "Remove the manual revert from Updates"
+  "notes": "Put the start timing under the controls where it is actually visible"
 }
