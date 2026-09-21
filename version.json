@@ -1,5 +1,5 @@
 {
-  "version": "502d56f",
+  "version": "3b15fc1",
   "bundle": "bundle.js",
-  "notes": "Fix the Shorts player still spanning the whole stage"
+  "notes": "Size the Shorts player in CSS, and keep a channel feed on that channel"
 }

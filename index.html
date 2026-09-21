@@ -661,6 +661,24 @@ body {
   z-index: 2;
   background: #000;
 }
+
+/* Constrain the player to the shape of a vertical video, so it stops filling
+   the sides with its own zoomed copy and the panels behind it show through.
+
+   vh rather than JavaScript measurement: the stage height is a fraction of the
+   viewport, so a viewport-relative max-width gives the same answer without
+   depending on when layout runs or when the iframe gets built — both of which
+   turned out to be unreliable here. Auto margins on a left:0/right:0 absolute
+   box centre it.
+
+   Deliberately a little under a true 9:16 of the stage. Too narrow only adds
+   thin bars above and below inside the player; too wide brings the side fill
+   straight back. */
+.np.shorts .yt-host {
+  width: auto;
+  max-width: 47vh;
+  margin: 0 auto;
+}
 /* Back and forward, living in the letterbox either side of a vertical Short.
 
    As tall as they can safely be, which is not the full height. The player
