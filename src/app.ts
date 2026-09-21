@@ -66,6 +66,12 @@ const CANDIDATE_FLOOR = 60;
 const QUEUE_LOW_WATER = 5;
 /** Upper bound on the candidate pool held in memory. */
 const QUEUE_CAP = 120;
+/**
+ * How far back a swipe can reach in Shorts. Anything older is dropped, so a
+ * long session does not carry every Short it ever played. Five is about as far
+ * as anyone reaches for the one they just scrolled past.
+ */
+const SHORTS_BACK_LIMIT = 5;
 
 type TabName = 'home' | 'search' | 'library' | 'settings';
 
@@ -89,7 +95,7 @@ export class App {
 
   private queue: RankedTrack[] = [];
   private currentRanked: RankedTrack | null = null;
-  /** Shorts already watched, so a downward swipe can go back to them. */
+  /** The last few Shorts watched, so a downward swipe can return to them. */
   private shortsBack: RankedTrack[] = [];
   private refilling = false;
 
@@ -1258,7 +1264,7 @@ export class App {
   private async previousShort(): Promise<void> {
     const previous = this.shortsBack.pop();
     if (!previous) {
-      this.setStatus('Nothing before this');
+      this.setStatus('That is as far back as it goes');
       return;
     }
     if (this.currentRanked) this.queue.unshift(this.currentRanked);
@@ -1508,7 +1514,7 @@ export class App {
     // Only Shorts keep a back stack; the music feed has a queue you can see.
     if (this.currentRanked?.track.kind === 'short') {
       this.shortsBack.push(this.currentRanked);
-      if (this.shortsBack.length > 30) this.shortsBack.shift();
+      if (this.shortsBack.length > SHORTS_BACK_LIMIT) this.shortsBack.shift();
     }
 
     const current: Surface = this.player.track?.kind === 'short' ? 'short' : 'music';
