@@ -48,7 +48,11 @@ const KEY = {
 
 /** Keeps storage bounded; also the window used for repeat suppression. */
 const MAX_EVENTS = 500;
-const MAX_HISTORY = 300;
+/**
+ * Doubles as the repeat-suppression window. Shorts are consumed far faster
+ * than tracks, so 300 was only a couple of sessions before things came back.
+ */
+const MAX_HISTORY = 800;
 /** Full track objects, so Home can render history without re-fetching. */
 const MAX_RECENT = 30;
 const MAX_LIKED = 200;

@@ -34,6 +34,8 @@ const SEARCH_TTL_MS = 7 * 24 * 60 * 60 * 1000;
 /** Costs in quota units, as published by Google. */
 const COST_SEARCH = 100;
 const COST_LIST = 1;
+/** Rotated through so repeated top-ups on one seed fetch different videos. */
+const TOPUP_ANGLES = ['', 'new', 'best', 'viral', 'compilation'];
 const TRENDING_TTL_MS = 60 * 60 * 1000;
 
 interface YtThumb { url?: string }
@@ -561,12 +563,16 @@ export class YouTubeSource implements MusicSource {
    * paid call in the app — 100 units — so it is only ever triggered by the
    * Shorts tab actually running out, never on a schedule.
    */
-  async topUpShorts(seedTags: string[]): Promise<Track[]> {
+  async topUpShorts(seedTags: string[], variant = 0): Promise<Track[]> {
     if (!this.configured) return [];
     const seed = seedTags[Math.floor(Math.random() * Math.max(1, seedTags.length))] ?? 'music';
-    const query = seed + ' #shorts';
+    // One query per seed returns one fixed set, cached for a week, so asking
+    // again brought back exactly what had just been watched. Rotating a
+    // modifier gives each seed several distinct pools to draw from.
+    const angle = TOPUP_ANGLES[variant % TOPUP_ANGLES.length] ?? '';
+    const query = (seed + ' ' + angle).trim() + ' #shorts';
 
-    const cacheKey = 'yt.shorts.' + seed.toLowerCase();
+    const cacheKey = 'yt.shorts.' + seed.toLowerCase() + '.' + (variant % TOPUP_ANGLES.length);
     const cached = store.cacheGet<Track[]>(cacheKey, SEARCH_TTL_MS);
     if (cached) return this.applyFilter(cached);
 

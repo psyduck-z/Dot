@@ -150,6 +150,12 @@ export class App {
   private hidden: Set<TrackId> = store.loadHidden();
   /** Distinguishes "still loading" from "genuinely nothing" in the Shorts tab. */
   private shortsSearched = false;
+  /** Rotates the top-up query so each refill reaches a different pool. */
+  private topUpVariant = 0;
+  /** Tags served this session, counted, to keep one from taking over. */
+  private tagFatigue = new Map<string, number>();
+  /** Consecutive early skips, with no like or completion between them. */
+  private skipStreak = 0;
 
   private libraryList!: HTMLElement;
   private playlistList!: HTMLElement;
@@ -382,23 +388,27 @@ export class App {
     // Shorts draw on their own list, falling back to the music tags so the
     // tab is not dead on arrival before anything is picked.
     const seeds = this.prefs.shortsTags.length > 0 ? this.prefs.shortsTags : this.prefs.musicTags;
-    const bought = await this.youtube.topUpShorts(seeds);
+    const bought = await this.youtube.topUpShorts(seeds, this.topUpVariant++);
     this.shortsSearched = true;
     if (bought.length === 0) {
       this.renderHome();
       return;
     }
 
-    const known = new Set(this.queue.map((r) => r.track.id));
-    const bucket = contextBucket();
-    for (const track of bought) {
-      if (known.has(track.id) || this.hidden.has(track.id)) continue;
-      this.queue.push({ track, score: this.model.score(featurize(track, bucket)), explored: false });
-    }
+    // History was never consulted here, so anything already watched got bought
+    // and queued again — the main source of Shorts repeating. Pushing straight
+    // onto the queue also skipped buildQueue, so none of the artist-cap or
+    // tag-variety rules had ever applied to Shorts at all.
+    const seen = new Set([...store.loadHistory(), ...this.hidden]);
+    const merged = [...this.queue.map((r) => r.track), ...bought.filter((t) => !seen.has(t.id))];
 
-    // Each top-up brought up to fifty more and nothing ever removed them, so a
-    // long session left every render filtering a queue of hundreds.
-    if (this.queue.length > QUEUE_CAP) this.queue = this.queue.slice(-QUEUE_CAP);
+    this.queue = buildQueue(merged, this.model, {
+      count: QUEUE_CAP,
+      discovery: this.exploreRateNow(),
+      exclude: seen,
+      bucket: contextBucket(),
+      fatigue: this.tagFatigue,
+    });
     this.renderHome();
   }
 
@@ -1229,6 +1239,7 @@ export class App {
     const controls = el('div', 'np-controls');
 
     const dislike = button('np-ctl', '✕', 'Not for me');
+    dislike.setAttribute('data-label', 'Not for me');
     dislike.addEventListener('click', () => this.react('disliked'));
 
     this.npPlay = button('np-ctl np-main', '▶', 'Play or pause');
@@ -1241,6 +1252,7 @@ export class App {
     next.addEventListener('click', () => void this.next('skipped'));
 
     this.npLike = button('np-ctl', '♡', 'Like');
+    this.npLike.setAttribute('data-label', 'Like');
     this.npLike.addEventListener('click', () => this.react('liked'));
 
     controls.appendChild(dislike);
@@ -1254,6 +1266,7 @@ export class App {
     // In Shorts this belongs on the same row as the reactions, so the whole
     // control strip is one line and the video keeps the height.
     const hideIcon = button('np-ctl np-hide-icon', '⊘', "Don't show this again");
+    hideIcon.setAttribute('data-label', 'Never');
     hideIcon.addEventListener('click', () => this.hideCurrent());
     controls.appendChild(hideIcon);
 
@@ -1490,6 +1503,17 @@ export class App {
     return settled.flat();
   }
 
+  /**
+   * Exploration for right now, rather than the flat setting.
+   *
+   * A run of skips means the model is confidently wrong, and the worst answer
+   * to that is more of what it was already sure about. Each consecutive early
+   * skip widens the search; a like or a finished track settles it again.
+   */
+  private exploreRateNow(): number {
+    return Math.min(0.75, this.prefs.discovery + this.skipStreak * 0.06);
+  }
+
   private async refillQueue(): Promise<void> {
     if (this.refilling) return;
     this.refilling = true;
@@ -1525,10 +1549,11 @@ export class App {
 
       this.queue = buildQueue(candidates, this.model, {
         count: QUEUE_TARGET,
-        discovery: this.prefs.discovery,
+        discovery: this.exploreRateNow(),
         // History and hidden both suppress, but only one of them expires.
         exclude: new Set([...store.loadHistory(), ...this.hidden]),
         bucket: contextBucket(),
+        fatigue: this.tagFatigue,
       });
 
       if (this.queue.length === 0) {
@@ -1560,6 +1585,10 @@ export class App {
 
     store.pushHistory(ranked.track.id);
     store.pushRecent(ranked.track);
+    for (const tag of ranked.track.tags) {
+      const key = tag.toLowerCase().trim();
+      if (key) this.tagFatigue.set(key, (this.tagFatigue.get(key) ?? 0) + 1);
+    }
     await this.player.play(ranked.track, url);
     this.renderHome();
   }
@@ -1609,6 +1638,10 @@ export class App {
     this.model.update(featurize(track, event.contextBucket), labelFor(event));
     store.saveModel(this.model);
     store.appendEvent(event);
+
+    // An early skip says the feed is off; anything else says it is not.
+    if (event.outcome === 'skipped' && event.playedFraction < 0.5) this.skipStreak++;
+    else this.skipStreak = 0;
 
     // A Short that reaches the end loops, the way the format does. Advancing
     // is something the viewer does by swiping, not something that happens to

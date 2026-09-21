@@ -30,6 +30,11 @@ const MIN_DISTINCT_TAGS = 5;
 /** Exploration halves once the model has seen this many real updates. */
 const EXPLORE_DECAY_AFTER = 200;
 
+/** How much one prior play of a tag this session costs a candidate. */
+const FATIGUE_WEIGHT = 0.04;
+/** Fatigue stops biting past this, so a favourite genre is not banished. */
+const FATIGUE_CAP = 0.3;
+
 export interface RankOptions {
   /** How many tracks to return. */
   count: number;
@@ -41,6 +46,13 @@ export interface RankOptions {
   bucket: number;
   /** Injectable for deterministic tests and the simulation harness. */
   random?: () => number;
+  /**
+   * How often each tag has already been served this session. Candidates
+   * carrying a well-worn tag are marked down, which is what stops a feed
+   * spending an hour on whichever tag the model likes most. Unlike the
+   * diversity constraints this is soft and it resets when the app does.
+   */
+  fatigue?: ReadonlyMap<string, number>;
 }
 
 export interface RankedTrack {
@@ -48,6 +60,14 @@ export interface RankedTrack {
   score: number;
   /** True when this slot was filled by exploration rather than by score. */
   explored: boolean;
+}
+
+/** Sum of how worn this track's tags are, bounded so it never dominates. */
+function fatigueFor(track: Track, fatigue: ReadonlyMap<string, number> | undefined): number {
+  if (!fatigue || fatigue.size === 0) return 0;
+  let total = 0;
+  for (const tag of tagsOf(track)) total += (fatigue.get(tag) ?? 0) * FATIGUE_WEIGHT;
+  return Math.min(total, FATIGUE_CAP);
 }
 
 function artistKey(t: Track): string {
@@ -84,7 +104,7 @@ export function buildQueue(
     seen.add(track.id);
     pool.push({
       track,
-      score: model.score(featurize(track, options.bucket)),
+      score: model.score(featurize(track, options.bucket)) - fatigueFor(track, options.fatigue),
       explored: false,
     });
   }

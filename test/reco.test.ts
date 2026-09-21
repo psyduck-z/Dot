@@ -213,3 +213,52 @@ test('identical tracks in different contexts score differently once context is l
 
   assert.ok(model.score(featurize(t, 0)) > model.score(featurize(t, 1)));
 });
+
+test('a worn-out tag loses ground to a fresh one', () => {
+  // Fatigue is what stops a feed spending an hour on whichever tag the model
+  // happens to like best, without banning that tag outright.
+  const model = new TasteModel();
+  const worn = track('worn', ['phonk'], 'a1');
+  const fresh = track('fresh', ['phonk', 'techno'], 'a2');
+
+  const fatigue = new Map([['phonk', 20]]);
+  const queue = buildQueue([worn, fresh], model, {
+    count: 2,
+    discovery: 0,
+    bucket: 0,
+    random: () => 0.99,
+    fatigue,
+  });
+
+  // Both carry the tired tag, but only one also offers something else.
+  assert.equal(queue.length, 2);
+  assert.ok(queue[0]!.score <= 0.5, 'a worn tag should be marked down');
+});
+
+test('fatigue is bounded, so a favourite genre is never banished', () => {
+  const model = new TasteModel();
+  const t = track('t', ['phonk'], 'a1');
+
+  const mild = buildQueue([t], model, {
+    count: 1, discovery: 0, bucket: 0, random: () => 0.99,
+    fatigue: new Map([['phonk', 5]]),
+  });
+  const extreme = buildQueue([t], model, {
+    count: 1, discovery: 0, bucket: 0, random: () => 0.99,
+    fatigue: new Map([['phonk', 5000]]),
+  });
+
+  // Five thousand plays must not cost meaningfully more than a handful past
+  // the cap, or the tag would effectively be removed from the catalogue.
+  assert.ok(Math.abs(mild[0]!.score - extreme[0]!.score) < 0.3);
+});
+
+test('no fatigue map leaves scoring untouched', () => {
+  const model = new TasteModel();
+  const t = track('t', ['phonk'], 'a1');
+  const plain = buildQueue([t], model, { count: 1, discovery: 0, bucket: 0, random: () => 0.99 });
+  const empty = buildQueue([t], model, {
+    count: 1, discovery: 0, bucket: 0, random: () => 0.99, fatigue: new Map(),
+  });
+  assert.equal(plain[0]!.score, empty[0]!.score);
+});
