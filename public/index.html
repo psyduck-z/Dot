@@ -820,16 +820,27 @@ body {
 .np-status { display: none; }
 .np.shorts .np-controls {
   flex: 0 0 auto;
-  margin: 6px 16px 0;
+  justify-content: center;
+  margin: 4px 16px 0;
 }
-.np.shorts .np-ctl { width: 42px; height: 42px; font-size: 16px; }
-.np.shorts .np-main { width: 48px; height: 48px; font-size: 17px; }
+/* Tap the video to play or pause; the player handles that itself. */
+.np.shorts .np-main,
+.np.shorts .np-next { display: none; }
+.np.shorts .np-ctl {
+  width: 40px;
+  height: 40px;
+  margin: 0 18px;
+  font-size: 16px;
+}
 
-/* Everything that is not the video or a control gives up its height. The
-   header keeps only the close affordance, and the text actions collapse from
-   full-width blocks into one short inline row.
+/* Everything that is not the video gives up its height.
 
-   Deliberately still above the video rather than floating over it: the player
+   Transport buttons are gone entirely here: the embedded player already
+   toggles on a tap, so a play button of our own was a second control for
+   something the video itself does, and it was eating a third of the screen.
+   What is left is the two reactions, which the player has no equivalent for.
+
+   The remaining chrome sits above the video rather than over it. The player
    draws its own title, share and logo, and covering those is not something
    this app does. */
 .np.shorts .np-head {

@@ -154,6 +154,13 @@ export class Player {
     }
   }
 
+  /** Restarts the current track without touching the queue. */
+  replay(): void {
+    this.reported = false;
+    this.engine.seek(0);
+    void this.engine.play().catch(() => undefined);
+  }
+
   toggle(): void {
     if (this.engine.isPaused()) void this.engine.play().catch(() => undefined);
     else this.engine.pause();

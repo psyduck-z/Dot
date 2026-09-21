@@ -1373,7 +1373,13 @@ export class App {
     store.saveModel(this.model);
     store.appendEvent(event);
 
-    if (event.outcome === 'completed') void this.next('completed');
+    // A Short that reaches the end loops, the way the format does. Advancing
+    // is something the viewer does by swiping, not something that happens to
+    // them. The completion still trains the model first — watching one all the
+    // way through is the strongest positive this surface produces.
+    if (event.outcome !== 'completed') return;
+    if (track.kind === 'short') this.player.replay();
+    else void this.next('completed');
   }
 
   private react(outcome: 'liked' | 'disliked'): void {
