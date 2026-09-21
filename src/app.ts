@@ -72,6 +72,8 @@ const QUEUE_CAP = 120;
  * as anyone reaches for the one they just scrolled past.
  */
 const SHORTS_BACK_LIMIT = 5;
+/** Must match the rail width in the stylesheet. */
+const RAIL_WIDTH = 62;
 
 type TabName = 'home' | 'search' | 'library' | 'settings';
 
@@ -1225,6 +1227,7 @@ export class App {
     this.np.appendChild(this.npStatus);
 
     this.attachShortsSwipe();
+    window.addEventListener('resize', () => this.sizeShortsStage());
 
     this.root.appendChild(this.np);
   }
@@ -1360,6 +1363,41 @@ export class App {
     this.np.appendChild(sheet);
   }
 
+  /**
+   * Sizes the player to the shape of the video it is showing.
+   *
+   * This is the difference between the chrome hugging the picture and the
+   * chrome spanning the screen. The player draws its title, share and logo at
+   * the edges of the iframe, not of the video — so an iframe stretched across
+   * the whole stage puts that furniture out in the black, far from the picture,
+   * covering everything. Sized to 9:16 it sits tight against the video, which
+   * is how Shorts looks on YouTube itself.
+   *
+   * Nothing is hidden or covered here; the player is simply given its correct
+   * dimensions instead of being stretched.
+   */
+  private sizeShortsStage(): void {
+    const host = this.ytHost;
+    if (!this.np.classList.contains('shorts')) {
+      host.style.width = '';
+      host.style.left = '';
+      host.style.right = '';
+      host.style.marginLeft = '';
+      return;
+    }
+
+    const height = this.npArt.clientHeight;
+    const stage = this.npArt.clientWidth;
+    if (!height || !stage) return;
+
+    // Leave room for a rail either side, so the player never grows under them.
+    const width = Math.min(Math.round((height * 9) / 16), stage - 2 * RAIL_WIDTH);
+    host.style.width = width + 'px';
+    host.style.left = '50%';
+    host.style.right = 'auto';
+    host.style.marginLeft = Math.round(-width / 2) + 'px';
+  }
+
   private openNowPlaying(): void {
     this.np.classList.add('open');
   }
@@ -1389,6 +1427,7 @@ export class App {
     const kind = track.kind ?? 'video';
     this.np.classList.toggle('video', track.sourceId === 'youtube');
     this.np.classList.toggle('shorts', kind === 'short');
+    this.sizeShortsStage();
     this.npAdd.hidden = kind === 'short';
 
     this.npLike.textContent = this.likes.has(track.id) ? '♥' : '♡';
