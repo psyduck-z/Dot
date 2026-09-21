@@ -629,8 +629,8 @@ body {
    space. Blurring a 320px thumbnail is far cheaper than blurring anything
    large, which matters on watch hardware.
 
-   The drift is slow and small on purpose: enough to feel alive behind a
-   vertical video, not enough to pull the eye off it. */
+   Static: movement behind a moving video competed with it, and cost frames
+   on hardware that has none spare. */
 .np-backdrop { display: none; }
 .np.shorts .np-backdrop {
   display: block;
@@ -645,12 +645,7 @@ body {
   filter: blur(26px) saturate(1.5);
   opacity: 0.6;
   transform: scale(1.3);
-  animation: dot-drift 24s ease-in-out infinite alternate;
   pointer-events: none;
-}
-@keyframes dot-drift {
-  from { transform: scale(1.22) translateY(-1%); }
-  to   { transform: scale(1.42) translateY(1%); }
 }
 
 .yt-host {
@@ -828,7 +823,7 @@ body {
    Flex rather than a fixed ratio, because a 9:16 box at this width would be
    taller than the screen. */
 .np.shorts {
-  padding-bottom: calc(6px + env(safe-area-inset-bottom, 0px));
+  padding-bottom: calc(2px + env(safe-area-inset-bottom, 0px));
   display: flex;
   flex-direction: column;
   padding-left: 0;
@@ -901,7 +896,7 @@ body {
 .np.shorts .np-controls {
   flex: 0 0 auto;
   justify-content: center;
-  margin: 6px 16px 2px;
+  margin: 2px 16px 0;
 }
 /* One row on one axis: the hide action joins the reactions instead of sitting
    on its own line below them, which gives the video back that height. */
@@ -912,10 +907,10 @@ body {
 .np.shorts .np-main,
 .np.shorts .np-next { display: none; }
 .np.shorts .np-ctl {
-  width: 40px;
-  height: 40px;
-  margin: 0 18px;
-  font-size: 16px;
+  width: 34px;
+  height: 34px;
+  margin: 0 16px;
+  font-size: 15px;
 }
 
 /* Everything that is not the video gives up its height.
@@ -931,18 +926,11 @@ body {
 .np.shorts .np-head {
   flex: 0 0 auto;
   margin: 0 8px;
-  min-height: 26px;
+  min-height: 22px;
 }
-.np.shorts .np-icon { width: 32px; height: 32px; font-size: 17px; }
+.np.shorts .np-icon { width: 28px; height: 28px; font-size: 16px; }
 .np.shorts .np-source { display: none; }
 
-.np.shorts .np-hide {
-  display: inline-block;
-  width: auto;
-  margin: 4px 6px 0;
-  padding: 3px 6px;
-  font-size: 11px;
-}
 
 /* A standing instruction deserves less visual weight than a reaction. */
 .np-hide {
