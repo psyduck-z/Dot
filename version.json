@@ -1,5 +1,5 @@
 {
-  "version": "49932d6",
+  "version": "502d56f",
   "bundle": "bundle.js",
-  "notes": "Light the Shorts letterbox with a gradient instead of a blur"
+  "notes": "Fix the Shorts player still spanning the whole stage"
 }
