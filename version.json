@@ -1,5 +1,5 @@
 {
-  "version": "3284021",
+  "version": "c051b9d",
   "bundle": "bundle.js",
-  "notes": "Fix three costs that grew as Shorts were watched"
+  "notes": "Limit Shorts back-scroll to five"
 }
