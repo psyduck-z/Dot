@@ -1,5 +1,5 @@
 {
-  "version": "c84afee",
+  "version": "57aba83",
   "bundle": "bundle.js",
-  "notes": "Stop the loading lines squashing Shorts, and make the caption a card"
+  "notes": "Keep music on music, and size the Shorts stage by measuring it"
 }
