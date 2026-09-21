@@ -1,5 +1,5 @@
 {
-  "version": "553efa6",
+  "version": "feb2346",
   "bundle": "bundle.js",
-  "notes": "Take storage off the play path, and collapse the Settings sections"
+  "notes": "Stop interrogating the player for things nobody is looking at"
 }
