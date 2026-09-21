@@ -1165,6 +1165,17 @@ export class App {
     const nextRail = button('np-rail np-rail-next', '›', 'Next short');
     nextRail.addEventListener('click', () => void this.next('skipped'));
     this.npArt.appendChild(nextRail);
+
+    // A second pair below the stage. These belong to the overlay rather than
+    // the video, so unlike the pair above them they can run right into the
+    // corners — there is no player chrome down here to sit on.
+    const prevLow = button('np-rail np-rail-low np-rail-prev', '‹', 'Previous short');
+    prevLow.addEventListener('click', () => void this.previousShort());
+    this.np.appendChild(prevLow);
+
+    const nextLow = button('np-rail np-rail-low np-rail-next', '›', 'Next short');
+    nextLow.addEventListener('click', () => void this.next('skipped'));
+    this.np.appendChild(nextLow);
     this.np.appendChild(this.npArt);
 
     this.npTitle = el('h2', 'np-title', '');
