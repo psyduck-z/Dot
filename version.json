@@ -1,5 +1,5 @@
 {
-  "version": "5037c2c",
+  "version": "3aaf690",
   "bundle": "bundle.js",
-  "notes": "Stop the Music tab emptying, and make the scrubber draggable"
+  "notes": "Stop an empty surface fetching in a loop"
 }
