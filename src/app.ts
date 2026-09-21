@@ -64,6 +64,8 @@ const QUEUE_TARGET = 20;
  */
 const CANDIDATE_FLOOR = 60;
 const QUEUE_LOW_WATER = 5;
+/** Upper bound on the candidate pool held in memory. */
+const QUEUE_CAP = 120;
 
 type TabName = 'home' | 'search' | 'library' | 'settings';
 
@@ -352,14 +354,15 @@ export class App {
     }
 
     const known = new Set(this.queue.map((r) => r.track.id));
+    const bucket = contextBucket();
     for (const track of bought) {
       if (known.has(track.id) || this.hidden.has(track.id)) continue;
-      this.queue.push({
-        track,
-        score: this.model.score(featurize(track, contextBucket())),
-        explored: false,
-      });
+      this.queue.push({ track, score: this.model.score(featurize(track, bucket)), explored: false });
     }
+
+    // Each top-up brought up to fifty more and nothing ever removed them, so a
+    // long session left every render filtering a queue of hundreds.
+    if (this.queue.length > QUEUE_CAP) this.queue = this.queue.slice(-QUEUE_CAP);
     this.renderHome();
   }
 

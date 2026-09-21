@@ -23,10 +23,6 @@ export function button(className: string, text?: string, label?: string): HTMLBu
   return node;
 }
 
-export function clear(node: HTMLElement): void {
-  node.textContent = '';
-}
-
 export function formatTime(seconds: number): string {
   if (!Number.isFinite(seconds) || seconds < 0) return '0:00';
   const m = Math.floor(seconds / 60);
@@ -89,6 +85,29 @@ function observer(): IntersectionObserver | null {
     );
   }
   return artObserver;
+}
+
+/**
+ * Empties a container, releasing any lazy artwork inside it first.
+ *
+ * This matters more than it looks. The image observer only lets go of a node
+ * once that node scrolls into view; anything discarded before then stays
+ * observed, and an observer holds its targets strongly. Lists here are rebuilt
+ * on every track change, so without this each rebuild left another dozen
+ * detached nodes behind, and every later callback had more of them to walk.
+ */
+export function clear(node: HTMLElement): void {
+  if (artObserver) {
+    const pending = node.querySelectorAll('*');
+    for (let i = 0; i < pending.length; i++) {
+      const child = pending[i]!;
+      if (pendingArt.has(child)) {
+        artObserver.unobserve(child);
+        pendingArt.delete(child);
+      }
+    }
+  }
+  node.textContent = '';
 }
 
 /** Sets background artwork, falling back to a tinted placeholder. */

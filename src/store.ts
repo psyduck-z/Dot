@@ -52,6 +52,12 @@ const MAX_HISTORY = 300;
 /** Full track objects, so Home can render history without re-fetching. */
 const MAX_RECENT = 30;
 const MAX_LIKED = 200;
+/**
+ * The learned-video catalogue is rewritten whole on every play, so its size is
+ * a per-track cost, not just a storage one. Uncapped, watching a few hundred
+ * Shorts meant serialising a few hundred tracks on every swipe.
+ */
+const MAX_CATALOG = 400;
 
 function read<T>(key: string, fallback: T): T {
   try {
@@ -310,7 +316,20 @@ export function loadYtCatalog(): Record<string, Track> {
 }
 
 export function saveYtCatalog(catalog: Record<string, Track>): void {
-  write(KEY.ytCatalog, catalog);
+  const keys = Object.keys(catalog);
+  if (keys.length <= MAX_CATALOG) {
+    write(KEY.ytCatalog, catalog);
+    return;
+  }
+
+  // Oldest entries go first. Insertion order is what Object.keys gives for
+  // string keys, which is the order they were learned in.
+  const trimmed: Record<string, Track> = {};
+  for (const key of keys.slice(keys.length - MAX_CATALOG)) {
+    const track = catalog[key];
+    if (track) trimmed[key] = track;
+  }
+  write(KEY.ytCatalog, trimmed);
 }
 
 /**
