@@ -140,6 +140,12 @@ export interface Prefs {
   filterLevel: 'off' | 'normal' | 'strict';
   /** Captions are off by default; this puts them back under user control. */
   captionsEnabled: boolean;
+  /**
+   * Hold the screen on while music plays. Keeps a track from being cut off by
+   * the watch sleeping, at the cost of an OLED staying lit — which on a watch
+   * is most of the battery, so it is a choice rather than a default.
+   */
+  keepScreenOn: boolean;
 }
 
 
@@ -151,4 +157,5 @@ export const DEFAULT_PREFS: Prefs = {
   youtubeApiKey: '',
   filterLevel: 'normal',
   captionsEnabled: false,
+  keepScreenOn: true,
 };

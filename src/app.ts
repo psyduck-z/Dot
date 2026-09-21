@@ -82,6 +82,8 @@ const SHORTS_BACK_LIMIT = 5;
  */
 const FAMILIAR_PER_REFILL = 2;
 const FAMILIAR_COOLDOWN = 60;
+/** Idle time before the player screen goes dark around the video. */
+const AMBIENT_DELAY_MS = 25000;
 
 /** Injected by the Android shell. Absent in a browser. */
 declare global {
@@ -181,6 +183,7 @@ export class App {
   private homeStale = false;
   /** Whether the shell is currently being asked to keep the screen on. */
   private keepingAwake = false;
+  private ambientTimer = 0;
   /** Surfaces already auto-fetched once, so an empty one cannot loop. */
   private autoFilled = new Set<Surface>();
   /**
@@ -219,6 +222,7 @@ export class App {
       onStateChange: (playing) => {
         this.renderPlayState(playing);
         this.updateKeepAwake(playing);
+    this.scheduleAmbient();
         // Keyless playlists arrive as bare video ids, so the real title only
         // becomes available once the embedded player has loaded the video.
         if (playing) void this.captureYouTubeMetadata();
@@ -507,6 +511,15 @@ export class App {
     // of the feed off-screen and fight the page's own scrolling, which is
     // worse on a small screen than it is on a phone.
     if (items.length === 0) this.ensureSurface();
+
+    const endless = button('primary endless');
+    endless.textContent = this.player.track ? 'Back to the endless mix' : 'Start the endless mix';
+    endless.addEventListener('click', () => {
+      this.channelLocked = false;
+      void this.begin();
+      this.openNowPlaying();
+    });
+    this.homeBody.appendChild(endless);
 
     this.homeBody.appendChild(el('h2', 'shelf-title', 'Made for you'));
     this.homeBody.appendChild(this.verticalList(items.slice(0, 20), this.emptyTextFor()));
@@ -1064,6 +1077,31 @@ export class App {
     }
     host.appendChild(segment);
 
+    const awakeToggle = button('toggle');
+    const paintAwake = (): void => {
+      awakeToggle.textContent = this.prefs.keepScreenOn
+        ? 'Screen stays on for music'
+        : 'Screen may sleep during music';
+      awakeToggle.classList.toggle('on', this.prefs.keepScreenOn);
+    };
+    paintAwake();
+    awakeToggle.addEventListener('click', () => {
+      this.prefs.keepScreenOn = !this.prefs.keepScreenOn;
+      store.savePrefs(this.prefs);
+      paintAwake();
+      this.updateKeepAwake(this.player.playing);
+    });
+    host.appendChild(
+      el(
+        'p',
+        'muted',
+        'Keeping the screen on stops a track being cut off when the watch ' +
+          'sleeps, and is the largest battery cost in the app. With it on, the ' +
+          'player screen goes dark around the video after half a minute.',
+      ),
+    );
+    host.appendChild(awakeToggle);
+
     const capToggle = button('toggle');
     const paintCaptions = (): void => {
       capToggle.textContent = this.prefs.captionsEnabled ? 'Subtitles on' : 'Subtitles off';
@@ -1438,6 +1476,8 @@ export class App {
     this.np.appendChild(this.npStatus);
 
     this.attachShortsSwipe();
+    this.np.addEventListener('touchstart', () => this.scheduleAmbient(), { passive: true });
+    this.np.addEventListener('click', () => this.scheduleAmbient());
 
     // Deferred writes have to land before the process does. pagehide is the
     // reliable one on mobile; visibilitychange covers being backgrounded
@@ -1649,7 +1689,7 @@ export class App {
    */
   private updateKeepAwake(playing: boolean): void {
     const isMusic = (this.player.track?.kind ?? 'music') !== 'short';
-    const want = playing && isMusic;
+    const want = playing && isMusic && this.prefs.keepScreenOn;
     if (want === this.keepingAwake) return;
     this.keepingAwake = want;
 
@@ -1658,6 +1698,26 @@ export class App {
     } catch {
       /* not running in the shell */
     }
+  }
+
+  /**
+   * After a while with music playing and nothing touched, everything but the
+   * player goes dark.
+   *
+   * The screen has to stay on for the track to keep going, but almost none of
+   * it has to stay lit. On an OLED an unlit pixel costs nothing, so dropping
+   * the title, controls and glow is most of the saving available without
+   * turning the screen off — which the player will not allow.
+   */
+  private scheduleAmbient(): void {
+    window.clearTimeout(this.ambientTimer);
+    this.np.classList.remove('ambient');
+    if (!this.prefs.keepScreenOn) return;
+    if ((this.player.track?.kind ?? 'music') === 'short') return;
+
+    this.ambientTimer = window.setTimeout(() => {
+      if (this.player.playing) this.np.classList.add('ambient');
+    }, AMBIENT_DELAY_MS);
   }
 
   private openNowPlaying(): void {
