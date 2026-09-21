@@ -1,5 +1,5 @@
 {
-  "version": "cddcfad",
+  "version": "820b8c3",
   "bundle": "bundle.js",
-  "notes": "Replace imported YouTube playlists with playlists you build"
+  "notes": "Shorts scroll both ways and give the video the screen"
 }
