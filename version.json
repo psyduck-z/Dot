@@ -1,5 +1,5 @@
 {
-  "version": "79a65a4",
+  "version": "128bc58",
   "bundle": "bundle.js",
-  "notes": "Repair the Shorts layout and add channel and scope search"
+  "notes": "Make channels a thing you can follow and browse"
 }

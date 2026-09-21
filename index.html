@@ -216,6 +216,15 @@ body {
   font-size: 17px;
   color: rgba(255, 255, 255, 0.55);
 }
+/* Channels read as people, so their image is round rather than square. */
+.row-avatar { border-radius: 50%; }
+.row-channel {
+  display: flex;
+  align-items: center;
+  min-width: 0;
+}
+.mini-btn.on { color: #1fd18c; }
+
 .row-art-liked {
   background: linear-gradient(135deg, #1fd18c, #0b6b53);
   color: #fff;
