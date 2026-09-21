@@ -670,25 +670,17 @@ export class App {
     const keyField = el('input', 'search-input key-input');
     keyField.type = 'text';
     keyField.id = 'dot-yt-key';
-    keyField.placeholder = 'Override the built-in key (optional)';
+    keyField.placeholder = 'YouTube Data API v3 key';
     keyField.autocomplete = 'off';
     keyField.spellcheck = false;
     keyField.value = this.prefs.youtubeApiKey;
 
-    const describeKey = (): string => {
-      if (!this.youtube.configured) return 'Not connected';
-      return this.youtube.usingBuiltInKey ? 'Using the built-in key' : 'Connected';
-    };
-    const keyState = el('p', 'readout', describeKey());
+    const keyState = el('p', 'readout', this.youtube.configured ? 'Connected' : 'Not connected');
     keyField.addEventListener('change', () => {
       this.prefs.youtubeApiKey = keyField.value.trim();
       store.savePrefs(this.prefs);
       if (!this.youtube.configured) {
         keyState.textContent = 'Not connected';
-        return;
-      }
-      if (this.youtube.usingBuiltInKey) {
-        keyState.textContent = 'Using the built-in key';
         return;
       }
       // One unit to find out now, rather than a key that silently returns

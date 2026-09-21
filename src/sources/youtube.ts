@@ -21,13 +21,6 @@ import { blockReason } from './filter.ts';
 import { classifyKind, parseEmbedAspect } from './kind.ts';
 import type { BrowseKind, MusicSource, SourceCapabilities, Track, TrackId } from '../types.ts';
 
-/**
- * Injected by the build from dot.local.json, which is gitignored. Empty when
- * no local key is configured, in which case Settings is the only way in.
- */
-declare const __DOT_YT_KEY__: string;
-const BUILT_IN_KEY = typeof __DOT_YT_KEY__ === 'string' ? __DOT_YT_KEY__ : '';
-
 const API = 'https://www.googleapis.com/youtube/v3';
 /** Category 10 is Music. Keeps podcasts and vlogs out of a music feed. */
 const MUSIC_CATEGORY = '10';
@@ -305,16 +298,14 @@ export class YouTubeSource implements MusicSource {
 
   /**
    * Read lazily so pasting a key in Settings takes effect without a reload.
-   * A key entered in Settings wins over the built-in one, so it can be
-   * overridden per device without rebuilding.
+   *
+   * Deliberately the only source. The bundle is published for over-the-air
+   * updates and the repository is public, so a key baked in at build time
+   * would be readable by anyone — and a client-side app cannot hide one.
+   * It stays on the device that entered it.
    */
   private get apiKey(): string {
-    return store.loadPrefs().youtubeApiKey.trim() || BUILT_IN_KEY;
-  }
-
-  /** True when the key came from the build rather than from Settings. */
-  get usingBuiltInKey(): boolean {
-    return !store.loadPrefs().youtubeApiKey.trim() && BUILT_IN_KEY.length > 0;
+    return store.loadPrefs().youtubeApiKey.trim();
   }
 
   /** True when live search is available. Playback never needs this. */

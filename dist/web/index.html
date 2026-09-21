@@ -1,0 +1,977 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no">
+<meta name="theme-color" content="#000000">
+<!-- DNS, TCP and TLS for these are set up while the shell paints, so the first
+     request does not pay for a handshake on a slow radio. -->
+<link rel="preconnect" href="https://www.youtube.com" crossorigin>
+<link rel="preconnect" href="https://i.ytimg.com" crossorigin>
+<link rel="preconnect" href="https://www.googleapis.com" crossorigin>
+<link rel="dns-prefetch" href="https://www.youtube.com">
+<link rel="dns-prefetch" href="https://i.ytimg.com">
+<title>Dot</title>
+<style>
+/* Single-theme by design. This runs on a watch face, so pure black grounds keep
+   OLED pixels unlit and the contrast is pitched for reading outdoors.
+
+   Constraints from the target being a frozen AOSP WebView on Android 7/8
+   (Chromium ~55-63):
+     - no CSS custom properties, no gap, no clamp(), no :is(), no aspect-ratio
+     - margins do the spacing that gap normally would
+     - every flex container that must scroll needs an explicit min-height: 0
+   Keep it that way until the device probe says otherwise. */
+
+* { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+[hidden] { display: none !important; }
+
+html, body {
+  height: 100%;
+  margin: 0;
+  background: #000;
+  color: #fff;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  font-size: 15px;
+  line-height: 1.4;
+  -webkit-font-smoothing: antialiased;
+  -webkit-text-size-adjust: 100%;
+  overscroll-behavior: none;
+}
+
+body {
+  display: -webkit-box;
+  display: -webkit-flex;
+  display: flex;
+  -webkit-box-align: center;
+  -webkit-align-items: center;
+  align-items: center;
+  -webkit-box-pack: center;
+  -webkit-justify-content: center;
+  justify-content: center;
+}
+
+/* Watch-shaped preview on desktop; the media queries below drop the frame. */
+.device {
+  position: relative;
+  width: 410px;
+  height: 502px;
+  background: #000;
+  border-radius: 62px;
+  border: 10px solid #1b1d21;
+  box-shadow: 0 24px 70px rgba(0, 0, 0, 0.75);
+  overflow: hidden;
+}
+
+.hint {
+  position: fixed;
+  bottom: 18px;
+  left: 0;
+  right: 0;
+  text-align: center;
+  color: #5a6069;
+  font-size: 12px;
+}
+
+@media (max-width: 560px), (max-height: 620px) {
+  body { display: block; }
+  .device {
+    width: 100%;
+    height: 100%;
+    max-width: none;
+    border: 0;
+    border-radius: 0;
+    box-shadow: none;
+  }
+  .hint { display: none; }
+}
+
+@media (min-width: 561px) and (max-height: 760px) and (min-height: 621px) {
+  .device { height: calc(100vh - 80px); }
+  .hint { display: none; }
+}
+
+#app {
+  position: relative;
+  height: 100%;
+  display: -webkit-box;
+  display: -webkit-flex;
+  display: flex;
+  -webkit-box-orient: vertical;
+  -webkit-flex-direction: column;
+  flex-direction: column;
+  min-height: 0;
+  overflow: hidden;
+}
+
+/* min-height:0 is what makes this scroll: flex:1 1 auto alone leaves
+   min-height:auto, the item grows to fit content, and it gets clipped instead. */
+.panes {
+  -webkit-box-flex: 1;
+  -webkit-flex: 1 1 auto;
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  overflow-x: hidden;
+  -webkit-overflow-scrolling: touch;
+  background: -webkit-linear-gradient(top, #1c1c1c 0%, #000 220px);
+  background: linear-gradient(to bottom, #1c1c1c 0%, #000 220px);
+}
+
+.pane {
+  padding: 0 16px 24px;
+  padding-top: calc(20px + env(safe-area-inset-top, 0px));
+}
+
+/* ---------------------------------------------------------------- onboarding */
+
+.onboard {
+  -webkit-box-flex: 1;
+  -webkit-flex: 1 1 auto;
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+  padding: 0 18px calc(26px + env(safe-area-inset-bottom, 0px));
+  padding-top: calc(26px + env(safe-area-inset-top, 0px));
+}
+
+.brand { margin-bottom: 20px; }
+.brand-dot {
+  display: inline-block;
+  width: 13px;
+  height: 13px;
+  margin-right: 8px;
+  border-radius: 50%;
+  background: #1fd18c;
+  vertical-align: middle;
+}
+.brand-name {
+  font-size: 17px;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+  vertical-align: middle;
+}
+
+.onboard-title {
+  margin: 0;
+  font-size: 28px;
+  font-weight: 800;
+  line-height: 1.15;
+  letter-spacing: -0.025em;
+  white-space: pre-line;
+}
+.onboard-sub { margin: 8px 0 18px; color: #a7a7a7; font-size: 14px; }
+
+/* ------------------------------------------------------------------- content */
+
+.greeting {
+  margin: 0 0 16px;
+  font-size: 25px;
+  font-weight: 800;
+  letter-spacing: -0.025em;
+}
+
+.shelf-title {
+  margin: 22px 0 10px;
+  font-size: 17px;
+  font-weight: 700;
+  letter-spacing: -0.015em;
+}
+
+/* In Library a heading starts a settings group, so it gets a rule above it.
+   :first-of-type would also match inside Home, hence the explicit scope. */
+.pane .shelf-title + .muted { margin-top: -4px; }
+#dot-library .shelf-title {
+  margin-top: 26px;
+  padding-top: 18px;
+  border-top: 1px solid #1c1c1c;
+}
+#dot-library .shelf-title:first-of-type {
+  margin-top: 8px;
+  padding-top: 0;
+  border-top: 0;
+}
+
+.muted { margin: 0 0 8px; color: #a7a7a7; font-size: 13px; }
+.empty { color: #7a7a7a; font-size: 13px; margin: 2px 0 0; }
+
+/* --------------------------------------------------------------------- rows */
+
+.list { margin: 0; }
+
+.row {
+  display: -webkit-box;
+  display: -webkit-flex;
+  display: flex;
+  -webkit-box-align: center;
+  -webkit-align-items: center;
+  align-items: center;
+  width: 100%;
+  min-height: 56px;
+  padding: 6px 0;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font-family: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.row:active { background: #141414; }
+
+.row-art {
+  -webkit-flex: 0 0 auto;
+  flex: 0 0 auto;
+  width: 46px;
+  height: 46px;
+  margin-right: 11px;
+  border-radius: 4px;
+  background-size: cover;
+  background-position: center;
+  background-color: #282828;
+  text-align: center;
+  line-height: 46px;
+  font-size: 17px;
+  color: rgba(255, 255, 255, 0.55);
+}
+.row-art-liked {
+  background: -webkit-linear-gradient(top left, #1fd18c, #0b6b53);
+  background: linear-gradient(135deg, #1fd18c, #0b6b53);
+  color: #fff;
+}
+
+.row-main {
+  -webkit-box-flex: 1;
+  -webkit-flex: 1 1 auto;
+  flex: 1 1 auto;
+  min-width: 0;
+}
+.row-title {
+  display: block;
+  font-size: 14px;
+  font-weight: 500;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.row-sub {
+  display: block;
+  color: #a7a7a7;
+  font-size: 12px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.row-feature .row-title { font-weight: 700; font-size: 15px; }
+
+/* -------------------------------------------------------------------- tiles */
+
+.tile-grid { margin: 0 0 18px; }
+
+.tile {
+  display: inline-block;
+  position: relative;
+  width: 48%;
+  height: 62px;
+  margin: 0 4% 8px 0;
+  padding: 9px 10px;
+  border: 0;
+  border-radius: 6px;
+  color: #fff;
+  font-family: inherit;
+  font-size: 13px;
+  font-weight: 700;
+  text-align: left;
+  vertical-align: top;
+  overflow: hidden;
+  cursor: pointer;
+}
+.tile:nth-child(2n) { margin-right: 0; }
+.tile.on { -webkit-box-shadow: inset 0 0 0 2px #1fd18c; box-shadow: inset 0 0 0 2px #1fd18c; }
+.tile-sm { height: 48px; font-size: 12px; }
+
+/* Tag chips. Twenty-eight tags as two-up tiles ran to fourteen rows — most of a
+   screen of scrolling to reach the slider below them. Chips size to their own
+   text and flow, which fits the same list into a third of the height. The
+   font-size: 0 on the container is what kills inline-block's whitespace gaps
+   without needing flex gap, which this WebView does not have. */
+.chip-grid { margin: 0 0 18px; font-size: 0; }
+.chip {
+  display: inline-block;
+  max-width: 100%;
+  margin: 0 5px 5px 0;
+  padding: 8px 11px;
+  border: 0;
+  border-radius: 14px;
+  color: #fff;
+  font-family: inherit;
+  font-size: 11px;
+  font-weight: 600;
+  line-height: 1.15;
+  white-space: nowrap;
+  vertical-align: top;
+  /* Unselected tags read as background; the chosen ones come forward. Not so
+     faint that they look disabled, which 0.5 did. */
+  opacity: 0.72;
+  cursor: pointer;
+}
+.chip.on {
+  opacity: 1;
+  -webkit-box-shadow: inset 0 0 0 2px #1fd18c;
+  box-shadow: inset 0 0 0 2px #1fd18c;
+}
+
+/* ------------------------------------------------------------------- search */
+
+.searchbar { margin-bottom: 16px; }
+.search-input {
+  width: 100%;
+  min-height: 44px;
+  padding: 11px 14px;
+  border: 0;
+  border-radius: 4px;
+  background: #fff;
+  color: #000;
+  font-family: inherit;
+  font-size: 14px;
+  font-weight: 500;
+  -webkit-appearance: none;
+}
+
+/* --------------------------------------------------------------------- misc */
+
+.stats { margin: 4px 0 16px; }
+.stat {
+  display: -webkit-box;
+  display: -webkit-flex;
+  display: flex;
+  -webkit-box-pack: justify;
+  -webkit-justify-content: space-between;
+  justify-content: space-between;
+  padding: 7px 0;
+  border-bottom: 1px solid #1c1c1c;
+  font-size: 13px;
+}
+.stat-k { color: #a7a7a7; }
+.stat-v { font-variant-numeric: tabular-nums; }
+
+.slider {
+  width: 100%;
+  margin: 4px 0 2px;
+  height: 28px;
+  background: transparent;
+  -webkit-appearance: none;
+}
+.slider::-webkit-slider-runnable-track { height: 4px; border-radius: 2px; background: #4d4d4d; }
+.slider::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  width: 20px;
+  height: 20px;
+  margin-top: -8px;
+  border-radius: 10px;
+  background: #fff;
+}
+.readout { margin: 0 0 8px; color: #1fd18c; font-size: 12px; font-variant-numeric: tabular-nums; }
+
+.primary {
+  display: block;
+  width: 100%;
+  min-height: 48px;
+  padding: 13px;
+  border: 0;
+  border-radius: 24px;
+  background: #1fd18c;
+  color: #00140d;
+  font-family: inherit;
+  font-size: 15px;
+  font-weight: 700;
+  cursor: pointer;
+}
+.primary:disabled { background: #2a2a2a; color: #6f6f6f; cursor: default; }
+
+/* Three-way filter strength control. */
+.segment {
+  display: -webkit-box;
+  display: -webkit-flex;
+  display: flex;
+  margin: 4px 0 14px;
+  padding: 3px;
+  border: 1px solid #2b2b2b;
+  border-radius: 22px;
+  background: #141414;
+  overflow: hidden;
+}
+.seg {
+  -webkit-box-flex: 1;
+  -webkit-flex: 1 1 0;
+  flex: 1 1 0;
+  min-height: 38px;
+  border: 0;
+  border-radius: 19px;
+  background: transparent;
+  color: #a7a7a7;
+  font-family: inherit;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+}
+.seg.on { background: #1fd18c; color: #00140d; }
+
+.toggle {
+  display: block;
+  width: 100%;
+  min-height: 44px;
+  margin: 4px 0 8px;
+  padding: 11px;
+  border: 1px solid #3a3a3a;
+  border-radius: 22px;
+  background: transparent;
+  color: #a7a7a7;
+  font-family: inherit;
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+}
+.toggle.on {
+  border-color: #1fd18c;
+  background: #12271f;
+  color: #1fd18c;
+}
+
+.danger {
+  display: block;
+  width: 100%;
+  min-height: 44px;
+  margin: 8px 0 0;
+  padding: 11px;
+  border: 1px solid #4a2b2b;
+  border-radius: 22px;
+  background: transparent;
+  color: #e2645c;
+  font-family: inherit;
+  font-size: 14px;
+  cursor: pointer;
+}
+
+/* -------------------------------------------------------------- mini player */
+
+.mini {
+  -webkit-flex: 0 0 auto;
+  flex: 0 0 auto;
+  position: relative;
+  display: -webkit-box;
+  display: -webkit-flex;
+  display: flex;
+  -webkit-box-align: center;
+  -webkit-align-items: center;
+  align-items: center;
+  margin: 0 8px 4px;
+  padding: 7px 8px;
+  border-radius: 7px;
+  background: #2a2723;
+  overflow: hidden;
+}
+
+.mini-tap {
+  -webkit-box-flex: 1;
+  -webkit-flex: 1 1 auto;
+  flex: 1 1 auto;
+  display: -webkit-box;
+  display: -webkit-flex;
+  display: flex;
+  -webkit-box-align: center;
+  -webkit-align-items: center;
+  align-items: center;
+  min-width: 0;
+  min-height: 40px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font-family: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.mini-art {
+  -webkit-flex: 0 0 auto;
+  flex: 0 0 auto;
+  width: 38px;
+  height: 38px;
+  margin-right: 10px;
+  border-radius: 4px;
+  background-size: cover;
+  background-position: center;
+  background-color: #444;
+  text-align: center;
+  line-height: 38px;
+  font-size: 15px;
+}
+.mini-text { min-width: 0; }
+.mini-title {
+  display: block;
+  font-size: 13px;
+  font-weight: 600;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.mini-artist {
+  display: block;
+  color: #b3b3b3;
+  font-size: 11px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.mini-btn {
+  -webkit-flex: 0 0 auto;
+  flex: 0 0 auto;
+  width: 44px;
+  height: 44px;
+  border: 0;
+  background: transparent;
+  color: #fff;
+  font-size: 15px;
+  font-family: inherit;
+  cursor: pointer;
+}
+.mini-track {
+  position: absolute;
+  left: 8px;
+  right: 8px;
+  bottom: 2px;
+  height: 2px;
+  border-radius: 1px;
+  background: rgba(255, 255, 255, 0.22);
+}
+.mini-fill { width: 0; height: 100%; border-radius: 1px; background: #fff; }
+
+/* ------------------------------------------------------------------- tabbar */
+
+.tabbar {
+  -webkit-flex: 0 0 auto;
+  flex: 0 0 auto;
+  display: -webkit-box;
+  display: -webkit-flex;
+  display: flex;
+  background: #000;
+  padding-bottom: env(safe-area-inset-bottom, 0px);
+}
+.tab {
+  -webkit-box-flex: 1;
+  -webkit-flex: 1 1 0;
+  flex: 1 1 0;
+  min-height: 50px;
+  padding: 5px 0 7px;
+  border: 0;
+  background: transparent;
+  color: #a7a7a7;
+  font-family: inherit;
+  cursor: pointer;
+}
+.tab-icon { display: block; font-size: 17px; line-height: 1.1; }
+.tab-label { display: block; font-size: 10px; margin-top: 2px; }
+.tab.on { color: #fff; }
+.tab.on .tab-label { font-weight: 600; }
+
+/* -------------------------------------------------------------- now playing */
+
+/* Slides up over everything. translate3d keeps it on the compositor, which
+   matters on weak watch GPUs. */
+.np {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 20;
+  padding: 0 22px calc(20px + env(safe-area-inset-bottom, 0px));
+  padding-top: calc(10px + env(safe-area-inset-top, 0px));
+  background: -webkit-linear-gradient(top, #3a3a3a 0%, #0a0a0a 60%, #000 100%);
+  background: linear-gradient(to bottom, #3a3a3a 0%, #0a0a0a 60%, #000 100%);
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+  -webkit-transform: translate3d(0, 100%, 0);
+  transform: translate3d(0, 100%, 0);
+  -webkit-transition: -webkit-transform 0.26s ease;
+  transition: transform 0.26s ease;
+}
+.np.open {
+  -webkit-transform: translate3d(0, 0, 0);
+  transform: translate3d(0, 0, 0);
+}
+
+.np-head {
+  display: -webkit-box;
+  display: -webkit-flex;
+  display: flex;
+  -webkit-box-align: center;
+  -webkit-align-items: center;
+  align-items: center;
+  -webkit-box-pack: justify;
+  -webkit-justify-content: space-between;
+  justify-content: space-between;
+  margin-bottom: 8px;
+}
+.np-icon {
+  width: 40px;
+  height: 40px;
+  border: 0;
+  background: transparent;
+  color: #fff;
+  font-size: 19px;
+  font-family: inherit;
+  cursor: pointer;
+}
+.np-spacer { pointer-events: none; }
+.np-source {
+  color: #c9c9c9;
+  font-size: 10px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
+.np-art {
+  position: relative;
+  width: 168px;
+  height: 168px;
+  margin: 2px auto 18px;
+  border-radius: 8px;
+  background-color: #282828;
+  box-shadow: 0 10px 34px rgba(0, 0, 0, 0.6);
+  overflow: hidden;
+}
+
+/* A video source gets the full width at 16:9 instead of a 168px square, which
+   letterboxed the picture into a stamp. The height comes from padding-bottom
+   rather than aspect-ratio, which is Chrome 88 and far newer than the target
+   WebView. Absolutely positioned children still fill it correctly. */
+.np.video .np-art {
+  width: 100%;
+  height: 0;
+  padding-bottom: 56.25%;
+  margin: 0 0 12px;
+  border-radius: 10px;
+}
+
+.np-art-img {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background-size: cover;
+  background-position: center;
+  background-color: #282828;
+  text-align: center;
+  line-height: 168px;
+  font-size: 44px;
+  color: rgba(255, 255, 255, 0.5);
+}
+/* In video mode the box has no fixed height, so centring by line-height fails. */
+.np.video .np-art-img { line-height: 0; }
+
+/* YouTube's terms require the embedded player to remain visible, so it is
+   mounted over the artwork rather than hidden. This is also why there is no
+   background audio on the YouTube path. */
+.yt-host {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 2;
+  background: #000;
+}
+.yt-host iframe {
+  display: block;
+  width: 100%;
+  height: 100%;
+  border: 0;
+}
+
+.key-input {
+  margin-bottom: 4px;
+  font-size: 12px;
+  font-family: ui-monospace, Menlo, Consolas, monospace;
+}
+
+.np-title {
+  margin: 0;
+  font-size: 19px;
+  font-weight: 700;
+  line-height: 1.22;
+  letter-spacing: -0.015em;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+.np-artist {
+  margin: 3px 0 0;
+  color: #b3b3b3;
+  font-size: 14px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.np-why { margin: 8px 0 0; color: #1fd18c; font-size: 11px; }
+
+.np-bar {
+  height: 4px;
+  margin: 16px 0 6px;
+  border-radius: 2px;
+  background: #4d4d4d;
+  overflow: hidden;
+}
+.np-fill { width: 0; height: 100%; background: #fff; }
+
+.np-times {
+  display: -webkit-box;
+  display: -webkit-flex;
+  display: flex;
+  -webkit-box-pack: justify;
+  -webkit-justify-content: space-between;
+  justify-content: space-between;
+  color: #a7a7a7;
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+}
+
+.np-controls {
+  display: -webkit-box;
+  display: -webkit-flex;
+  display: flex;
+  -webkit-box-align: center;
+  -webkit-align-items: center;
+  align-items: center;
+  -webkit-box-pack: center;
+  -webkit-justify-content: space-between;
+  justify-content: space-between;
+  margin-top: 14px;
+}
+/* Three weights, so the row reads at a glance instead of as four equal
+   buttons: play is the action, next is navigation, the reactions are asides. */
+.np-ctl {
+  width: 46px;
+  height: 46px;
+  border: 0;
+  border-radius: 23px;
+  background: transparent;
+  color: #8f8f8f;
+  font-size: 17px;
+  font-family: inherit;
+  cursor: pointer;
+}
+.np-next { width: 52px; height: 52px; color: #e6e6e6; font-size: 20px; }
+.np-ctl.on { color: #1fd18c; }
+.np-main {
+  width: 62px;
+  height: 62px;
+  border-radius: 31px;
+  background: #fff;
+  color: #000;
+  font-size: 20px;
+}
+.np-main:active { background: #d8d8d8; }
+
+/* Shorts grid: portrait cells, two across at watch width. */
+.short-grid { margin: 0 -3px; }
+.short-cell {
+  display: inline-block;
+  width: 48%;
+  margin: 0 1% 10px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font-family: inherit;
+  text-align: left;
+  vertical-align: top;
+  cursor: pointer;
+}
+/* 9:16 via padding-bottom, because aspect-ratio is Chrome 88. */
+.short-art {
+  position: relative;
+  width: 100%;
+  height: 0;
+  padding-bottom: 177%;
+  margin-bottom: 6px;
+  border-radius: 8px;
+  background-size: cover;
+  background-position: center;
+  background-color: #282828;
+  overflow: hidden;
+}
+.short-label {
+  display: block;
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 1.25;
+  max-height: 30px;
+  overflow: hidden;
+  color: #d8d8d8;
+}
+.short-art:after {
+  content: '';
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: 42%;
+  background: -webkit-linear-gradient(top, rgba(0,0,0,0), rgba(0,0,0,0.55));
+  background: linear-gradient(to bottom, rgba(0,0,0,0), rgba(0,0,0,0.55));
+}
+
+/* Shorts playback: the video takes every pixel that is not a control.
+   Flex rather than a fixed ratio, because a 9:16 box at this width would be
+   taller than the screen. */
+.np.shorts {
+  display: -webkit-box;
+  display: -webkit-flex;
+  display: flex;
+  -webkit-box-orient: vertical;
+  -webkit-flex-direction: column;
+  flex-direction: column;
+  padding-left: 0;
+  padding-right: 0;
+  overflow: hidden;
+}
+.np.shorts .np-head {
+  -webkit-flex: 0 0 auto;
+  flex: 0 0 auto;
+  margin: 0 16px 4px;
+}
+.np.shorts .np-art {
+  -webkit-box-flex: 1;
+  -webkit-flex: 1 1 auto;
+  flex: 1 1 auto;
+  min-height: 0;
+  width: 100%;
+  height: auto;
+  padding-bottom: 0;
+  margin: 0;
+  border-radius: 0;
+  box-shadow: none;
+}
+.np.shorts .np-title,
+.np.shorts .np-artist,
+.np.shorts .np-why,
+.np.shorts .np-bar,
+.np.shorts .np-times,
+.np.shorts .np-status { display: none; }
+.np.shorts .np-controls {
+  -webkit-flex: 0 0 auto;
+  flex: 0 0 auto;
+  margin: 8px 16px 0;
+}
+.np.shorts .np-ctl { width: 44px; height: 44px; font-size: 17px; }
+.np.shorts .np-main { width: 52px; height: 52px; }
+.np.shorts .np-hide { margin: 6px 16px 0; }
+
+/* A standing instruction deserves less visual weight than a reaction. */
+.np-hide {
+  display: block;
+  width: 100%;
+  margin-top: 10px;
+  padding: 8px;
+  border: 0;
+  background: transparent;
+  color: #8a8a8a;
+  font-family: inherit;
+  font-size: 12px;
+  text-decoration: underline;
+  cursor: pointer;
+}
+
+.np-status {
+  margin: 12px 0 0;
+  min-height: 16px;
+  text-align: center;
+  color: #a7a7a7;
+  font-size: 12px;
+}
+
+button:focus-visible, input:focus-visible {
+  outline: 2px solid #1fd18c;
+  outline-offset: 2px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  * { -webkit-transition: none !important; transition: none !important; animation: none !important; }
+}
+</style>
+</head>
+<body>
+  <div class="device"><div id="app"></div></div>
+  <p class="hint">Watch preview at 410 &times; 502 &mdash; narrow the window below 560px for fullscreen</p>
+  <script>
+  /*
+   * Boot loader. ES5 only: this runs before the bundle it is deciding about.
+   *
+   * Dot can run a web build downloaded after install, so the APK does not have
+   * to be reinstalled for every change. The packaged bundle stays as the floor.
+   *
+   * The sentinel is the safety net. It is written before a downloaded build
+   * runs and cleared once the app is alive, so a build that crashes on startup
+   * leaves it behind and is thrown away on the next launch. Without that, one
+   * bad update would brick the app on a device with no browser and no easy way
+   * to clear site data.
+   */
+  (function () {
+    var BUNDLE = 'dot.ota.bundle.v1';
+    var VERSION = 'dot.ota.version.v1';
+    var SENTINEL = 'dot.ota.booting.v1';
+
+    function packaged() {
+      var s = document.createElement('script');
+      s.src = 'bundle.js';
+      document.body.appendChild(s);
+    }
+
+    var code = null;
+    var version = null;
+    try {
+      version = localStorage.getItem(VERSION);
+      code = localStorage.getItem(BUNDLE);
+
+      // The last launch from this build never finished starting up.
+      if (code && localStorage.getItem(SENTINEL) === version) {
+        localStorage.removeItem(BUNDLE);
+        localStorage.removeItem(VERSION);
+        localStorage.removeItem(SENTINEL);
+        code = null;
+      }
+    } catch (e) {
+      code = null;
+    }
+
+    if (!code) {
+      packaged();
+      return;
+    }
+
+    try {
+      localStorage.setItem(SENTINEL, version);
+    } catch (e) {
+      /* no storage: fall through and run it anyway */
+    }
+
+    try {
+      // Indirect eval so the bundle evaluates in global scope, as a script tag
+      // would. Synchronous, which is what makes the catch below meaningful.
+      (0, eval)(code);
+    } catch (e) {
+      try {
+        localStorage.removeItem(BUNDLE);
+        localStorage.removeItem(VERSION);
+        localStorage.removeItem(SENTINEL);
+      } catch (e2) {
+        /* nothing useful to do */
+      }
+      packaged();
+    }
+  })();
+  </script>
+</body>
+</html>

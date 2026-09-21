@@ -30,10 +30,9 @@ jobs:
         run: node --test --experimental-strip-types test/*.test.ts
 
       - name: Build web bundle
-        # dot.local.json is gitignored, so CI has no key unless the repo sets
-        # one. Without it the app still runs; the key is entered in Settings.
-        env:
-          DOT_YT_KEY: ${{ secrets.DOT_YT_KEY }}
+        # No API key is built in. The bundle is published publicly for
+        # over-the-air updates, so a key here would be readable by anyone;
+        # it is entered per device in Settings instead.
         run: node scripts/build.mjs
 
       - name: Publish web build for over-the-air updates

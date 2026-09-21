@@ -29,27 +29,6 @@ const serve = args.has('--serve');
 const port = Number(process.env.PORT) || 5174;
 
 /**
- * A built-in YouTube key, so the app works without pasting one in every time.
- *
- * Read from dot.local.json, which is gitignored: baking a key into tracked
- * source would put it in git history permanently, where deleting it later does
- * not remove it. This keeps the convenience without that. DOT_YT_KEY in the
- * environment overrides, which is what CI would use.
- *
- * The key still ships inside the bundle — unavoidable for a client-side app —
- * so it should stay restricted to the YouTube Data API.
- */
-function localKey() {
-  if (process.env.DOT_YT_KEY) return process.env.DOT_YT_KEY;
-  try {
-    const raw = fs.readFileSync(path.join(root, 'dot.local.json'), 'utf8');
-    return JSON.parse(raw).youtubeApiKey ?? '';
-  } catch {
-    return '';
-  }
-}
-
-/**
  * Identifies this build, so the app can tell whether a downloaded bundle is
  * newer than what it is running. The commit sha when CI supplies one,
  * otherwise a timestamp, which is enough for local iteration.
@@ -73,7 +52,6 @@ const options = {
   logLevel: 'info',
   define: {
     'process.env.NODE_ENV': JSON.stringify(watch ? 'development' : 'production'),
-    __DOT_YT_KEY__: JSON.stringify(localKey()),
     __DOT_VERSION__: JSON.stringify(buildVersion()),
   },
 };
