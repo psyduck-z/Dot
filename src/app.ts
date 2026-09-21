@@ -17,7 +17,7 @@ import { TasteModel, labelFor } from './reco/model.ts';
 import { buildQueue, exploreRate, type RankedTrack } from './reco/queue.ts';
 import { contextBucket, featurize, hashKey, normalizeTag } from './reco/features.ts';
 import * as store from './store.ts';
-import { button, clear, el, formatTime, paintArt, tintFor } from './ui/dom.ts';
+import { button, clear, el, formatTime, paintArt, tintFor, ytThumb } from './ui/dom.ts';
 import type { MusicSource, PlayEvent, Prefs, Track, TrackId } from './types.ts';
 import type { TrackKind } from './sources/kind.ts';
 
@@ -160,6 +160,9 @@ export class App {
       return;
     }
     this.renderShell();
+    // Kick the player off immediately, in parallel with fetching the feed, so
+    // the two slow things overlap instead of queueing behind each other.
+    this.ytEngine.prewarm();
     this.renderHome();
     this.renderLibrary();
     await this.refillQueue();
@@ -378,7 +381,7 @@ export class App {
     // of the feed off-screen and fight the page's own scrolling, which is
     // worse on a small screen than it is on a phone.
     this.homeBody.appendChild(el('h2', 'shelf-title', 'Made for you'));
-    this.homeBody.appendChild(this.verticalList(items.slice(0, 30), this.emptyTextFor()));
+    this.homeBody.appendChild(this.verticalList(items.slice(0, 20), this.emptyTextFor()));
 
     const recent = store
       .loadRecent()
@@ -410,7 +413,7 @@ export class App {
   private shortCell(ranked: RankedTrack): HTMLElement {
     const cell = button('short-cell');
     const art = el('div', 'short-art');
-    paintArt(art, ranked.track.artworkUrl, ranked.track.title, '▶');
+    paintArt(art, ytThumb(ranked.track.artworkUrl, 'mq'), ranked.track.title, '▶', true);
     cell.appendChild(art);
     cell.appendChild(el('span', 'short-label', ranked.track.title));
     cell.addEventListener('click', () => {
@@ -496,7 +499,7 @@ export class App {
     const row = button('row');
 
     const art = el('div', 'row-art');
-    paintArt(art, ranked.track.artworkUrl, ranked.track.title, ranked.track.isLive ? '📻' : '♪');
+    paintArt(art, ytThumb(ranked.track.artworkUrl, 'default'), ranked.track.title, '♪', true);
     row.appendChild(art);
 
     const main = el('div', 'row-main');
@@ -985,7 +988,7 @@ export class App {
     this.miniBar.hidden = false;
     this.miniTitle.textContent = track.title;
     this.miniArtist.textContent = track.artist;
-    paintArt(this.miniArt, track.artworkUrl, track.title, track.isLive ? '📻' : '♪');
+    paintArt(this.miniArt, ytThumb(track.artworkUrl, 'default'), track.title, '♪');
 
     this.npTitle.textContent = track.title;
     this.npArtist.textContent = track.artist;

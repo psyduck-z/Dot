@@ -128,6 +128,27 @@ export class YouTubeEngine implements PlaybackEngine {
     this.events = events;
   }
 
+  /**
+   * Downloads the IFrame API and constructs the player ahead of time.
+   *
+   * Without this, none of that starts until the first tap on play, so the
+   * whole player bundle downloads and initialises *after* the gesture — which
+   * is most of the ten to fifteen seconds before a track starts on a slow
+   * device. Doing it during startup moves the cost to where a wait is
+   * expected, and makes the first play as quick as every later one.
+   *
+   * The host has to be visible for the iframe to load at all, but it lives
+   * inside the Now Playing overlay, which sits translated off-screen until
+   * opened. Nothing is shown.
+   */
+  prewarm(): void {
+    this.host.hidden = false;
+    void this.ensurePlayer().catch(() => {
+      // A cold start failing is not fatal; the first real play retries.
+      this.host.hidden = true;
+    });
+  }
+
   private ensurePlayer(): Promise<YtPlayer> {
     if (this.ready) return this.ready;
 
@@ -148,6 +169,10 @@ export class YouTubeEngine implements PlaybackEngine {
               rel: 0,
               modestbranding: 1,
               iv_load_policy: 3,
+              // Telling the player its embedding origin up front avoids a
+              // round of postMessage handshaking it otherwise does to work it
+              // out, which is slow on the watch's appassets:// style origin.
+              origin: window.location.origin,
               // Do not force captions on. This alone is not enough — it only
               // means "do not turn them on by default", and a viewer whose
               // YouTube account has captions enabled still gets them, hence
