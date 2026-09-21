@@ -49,7 +49,7 @@ const KEY = {
 } as const;
 
 /** Keeps storage bounded; also the window used for repeat suppression. */
-const MAX_EVENTS = 500;
+const MAX_EVENTS = 200;
 /**
  * Doubles as the repeat-suppression window. Shorts are consumed far faster
  * than tracks, so 300 was only a couple of sessions before things came back.
@@ -63,7 +63,26 @@ const MAX_LIKED = 200;
  * a per-track cost, not just a storage one. Uncapped, watching a few hundred
  * Shorts meant serialising a few hundred tracks on every swipe.
  */
-const MAX_CATALOG = 400;
+const MAX_CATALOG = 150;
+
+/**
+ * Only the fields anything actually reads back. A stored Track was carrying
+ * play counts, release years and rating flags that nothing consults once the
+ * track has been seen — all of it parsed again at every launch.
+ */
+function slimTrack(t: Track): Track {
+  return {
+    id: t.id,
+    sourceId: t.sourceId,
+    title: t.title,
+    artist: t.artist,
+    artistId: t.artistId,
+    duration: t.duration,
+    artworkUrl: t.artworkUrl,
+    tags: t.tags.slice(0, 8),
+    kind: t.kind,
+  };
+}
 
 function read<T>(key: string, fallback: T): T {
   try {
@@ -384,17 +403,14 @@ export function loadYtCatalog(): Record<string, Track> {
 
 export function saveYtCatalog(catalog: Record<string, Track>): void {
   const keys = Object.keys(catalog);
-  if (keys.length <= MAX_CATALOG) {
-    write(KEY.ytCatalog, catalog);
-    return;
-  }
-
   // Oldest entries go first. Insertion order is what Object.keys gives for
   // string keys, which is the order they were learned in.
+  const kept = keys.length <= MAX_CATALOG ? keys : keys.slice(keys.length - MAX_CATALOG);
+
   const trimmed: Record<string, Track> = {};
-  for (const key of keys.slice(keys.length - MAX_CATALOG)) {
+  for (const key of kept) {
     const track = catalog[key];
-    if (track) trimmed[key] = track;
+    if (track) trimmed[key] = slimTrack(track);
   }
   write(KEY.ytCatalog, trimmed);
 }

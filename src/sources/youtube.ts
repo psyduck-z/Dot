@@ -172,7 +172,17 @@ export class YouTubeSource implements MusicSource {
    * entire catalogue: it grows from the playlists you add and fills in real
    * titles as the player reports them.
    */
-  private catalog: Record<string, Track> = store.loadYtCatalog();
+  /**
+   * Read on first use rather than on construction. As a field initializer this
+   * parsed the whole stored catalogue during startup, before anything had been
+   * drawn, for a feed that may never ask for it.
+   */
+  private catalogCache: Record<string, Track> | null = null;
+
+  private get catalog(): Record<string, Track> {
+    if (!this.catalogCache) this.catalogCache = store.loadYtCatalog();
+    return this.catalogCache;
+  }
   /** How many results the last read dropped, for the "N hidden" note. */
   lastHidden = 0;
 
