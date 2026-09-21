@@ -1,5 +1,5 @@
 {
-  "version": "92dbb93",
+  "version": "62f0e79",
   "bundle": "bundle.js",
-  "notes": "Make the screen-on cost optional, dim it, and put the endless mix back"
+  "notes": "Double-tap to dim the screen, and remember the level to return to"
 }
