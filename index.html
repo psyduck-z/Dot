@@ -286,15 +286,16 @@ body {
 .chip {
   display: inline-block;
   max-width: 100%;
-  margin: 0 5px 5px 0;
-  padding: 8px 11px;
+  min-height: 42px;
+  margin: 0 6px 6px 0;
+  padding: 12px 15px;
   border: 0;
-  border-radius: 14px;
+  border-radius: 21px;
   color: #fff;
   font-family: inherit;
-  font-size: 11px;
+  font-size: 13px;
   font-weight: 600;
-  line-height: 1.15;
+  line-height: 1.2;
   white-space: nowrap;
   vertical-align: top;
   /* Unselected tags read as background; the chosen ones come forward. Not so
@@ -640,13 +641,17 @@ body {
   right: 0;
   bottom: 0;
   z-index: 1;
+  /* Brightest at roughly where the player's edges fall, fading to black at
+     the outside. The stops used to peak in the middle, which is the one part
+     the player covers — so the lift existed but was never visible. */
   background: linear-gradient(
     to right,
     #000 0%,
-    rgba(255, 255, 255, 0.03) 26%,
-    rgba(255, 255, 255, 0.13) 46%,
-    rgba(255, 255, 255, 0.13) 54%,
-    rgba(255, 255, 255, 0.03) 74%,
+    rgba(255, 255, 255, 0.02) 9%,
+    rgba(255, 255, 255, 0.18) 25%,
+    rgba(255, 255, 255, 0.20) 50%,
+    rgba(255, 255, 255, 0.18) 75%,
+    rgba(255, 255, 255, 0.02) 91%,
     #000 100%
   );
   pointer-events: none;

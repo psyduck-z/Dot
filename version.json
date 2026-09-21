@@ -1,5 +1,5 @@
 {
-  "version": "3b15fc1",
+  "version": "102d5d5",
   "bundle": "bundle.js",
-  "notes": "Size the Shorts player in CSS, and keep a channel feed on that channel"
+  "notes": "Show the panel glow, release channel mode, enlarge preference chips"
 }
