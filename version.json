@@ -1,5 +1,5 @@
 {
-  "version": "54eb091",
+  "version": "4340767",
   "bundle": "bundle.js",
-  "notes": "Fix the classification chain that starved the Music feed"
+  "notes": "Teach the music model about sequence, and bring liked tracks back"
 }
