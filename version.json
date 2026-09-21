@@ -1,5 +1,5 @@
 {
-  "version": "4340767",
+  "version": "5b8c6da",
   "bundle": "bundle.js",
-  "notes": "Teach the music model about sequence, and bring liked tracks back"
+  "notes": "Take the heavy work off the per-track path"
 }
