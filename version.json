@@ -1,5 +1,5 @@
 {
-  "version": "62f0e79",
+  "version": "4761546",
   "bundle": "bundle.js",
-  "notes": "Double-tap to dim the screen, and remember the level to return to"
+  "notes": "Cut startup work: build screens on demand, store the model as bytes"
 }
