@@ -170,13 +170,16 @@ body {
 /* Settings sections, closed until asked for. The marker turns rather than
    the row moving, so opening one does not shift the others under the finger. */
 .section-toggle {
-  display: block;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
   width: 100%;
-  margin: 0;
-  padding: 15px 2px;
-  border: 0;
-  border-top: 1px solid #1c1c1c;
-  background: transparent;
+  min-height: 52px;
+  margin: 14px 0 0;
+  padding: 0 14px;
+  border: 1px solid #262626;
+  border-radius: 12px;
+  background: #131313;
   color: #fff;
   font-family: inherit;
   font-size: 15px;
@@ -184,15 +187,31 @@ body {
   text-align: left;
   cursor: pointer;
 }
-.section-toggle:after {
-  content: 'a';
-  float: right;
-  color: #7a7a7a;
-  transition: transform 0.15s ease;
-  display: inline-block;
+.section-toggle.open {
+  border-color: #1fd18c;
+  border-bottom-left-radius: 0;
+  border-bottom-right-radius: 0;
 }
-.section-toggle.open:after { transform: rotate(90deg); }
-.section-body { padding-bottom: 10px; }
+.section-name { letter-spacing: -0.01em; }
+.section-mark {
+  width: 24px;
+  height: 24px;
+  line-height: 22px;
+  border-radius: 12px;
+  background: #222;
+  color: #bdbdbd;
+  font-size: 15px;
+  font-weight: 700;
+  text-align: center;
+}
+.section-toggle.open .section-mark { background: #1fd18c; color: #00140d; }
+
+.section-body {
+  padding: 14px 12px 4px;
+  border: 1px solid #1fd18c;
+  border-top: 0;
+  border-radius: 0 0 12px 12px;
+}
 
 #dot-library .shelf-title,
 #dot-settings .shelf-title {

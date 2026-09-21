@@ -1,5 +1,5 @@
 {
-  "version": "684ec39",
+  "version": "43b90bc",
   "bundle": "bundle.js",
-  "notes": "Fix double-tap dimming, and put the start timing where it can be read"
+  "notes": "Refresh the timing on every visit, and only collapse the tag pickers"
 }
