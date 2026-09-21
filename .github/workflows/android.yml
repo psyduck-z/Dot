@@ -8,6 +8,9 @@ on:
     branches: ['**']
   workflow_dispatch:
 
+permissions:
+  contents: write
+
 jobs:
   build:
     runs-on: ubuntu-latest
@@ -54,6 +57,17 @@ jobs:
           name: dot-web
           path: web/*
           if-no-files-found: error
+
+      - name: Publish to gh-pages
+        # Serves the files the in-app updater fetches. Only from the default
+        # branch: a build from a side branch should not become what every
+        # watch downloads. Uses the workflow's own token, so no PAT is needed.
+        if: github.ref == 'refs/heads/main'
+        uses: peaceiris/actions-gh-pages@v4
+        with:
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          publish_dir: ./web
+          keep_files: false
 
       - name: Stage web build as Android assets
         run: |

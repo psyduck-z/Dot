@@ -24,6 +24,20 @@ const KEY = {
   url: 'dot.ota.url.v1',
 } as const;
 
+/**
+ * Where updates come from unless told otherwise.
+ *
+ * Hardcoded rather than left blank because there is exactly one place this
+ * app is published from, and making the watch's owner type a URL into a
+ * watch-sized text field is a poor trade for configurability nobody wants.
+ * The Settings field still overrides it, which is what makes testing a build
+ * from somewhere else possible.
+ *
+ * Served by GitHub Pages from the repository's gh-pages branch. Nothing
+ * secret lives there: it is the same compiled bundle that ships in the APK.
+ */
+export const DEFAULT_UPDATE_URL = 'https://psyduck-z.github.io/Dot/version.json';
+
 declare const __DOT_VERSION__: string;
 export const BUILD_VERSION = typeof __DOT_VERSION__ === 'string' ? __DOT_VERSION__ : 'dev';
 
@@ -65,9 +79,14 @@ function remove(key: string): void {
   }
 }
 
-/** Where to look for updates. Empty until configured in Settings. */
+/** Where to look for updates: the Settings override, else the default. */
 export function updateUrl(): string {
-  return (read(KEY.url) ?? '').trim();
+  return (read(KEY.url) ?? '').trim() || DEFAULT_UPDATE_URL;
+}
+
+/** True when the Settings field is empty and the built-in URL is in use. */
+export function usingDefaultUpdateUrl(): boolean {
+  return !(read(KEY.url) ?? '').trim();
 }
 
 export function setUpdateUrl(url: string): void {
@@ -112,10 +131,6 @@ function resolve(base: string, path: string): string {
 export async function checkForUpdate(): Promise<UpdateStatus> {
   const current = runningVersion();
   const url = updateUrl();
-
-  if (!url) {
-    return { current, message: 'No update source set.' };
-  }
 
   let manifest: UpdateManifest;
   try {

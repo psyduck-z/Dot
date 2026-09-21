@@ -182,12 +182,14 @@ body {
 /* In Library a heading starts a settings group, so it gets a rule above it.
    :first-of-type would also match inside Home, hence the explicit scope. */
 .pane .shelf-title + .muted { margin-top: -4px; }
-#dot-library .shelf-title {
+#dot-library .shelf-title,
+#dot-settings .shelf-title {
   margin-top: 26px;
   padding-top: 18px;
   border-top: 1px solid #1c1c1c;
 }
-#dot-library .shelf-title:first-of-type {
+#dot-library .shelf-title:first-of-type,
+#dot-settings .shelf-title:first-of-type {
   margin-top: 8px;
   padding-top: 0;
   border-top: 0;
@@ -570,7 +572,7 @@ body {
   cursor: pointer;
 }
 .tab-icon { display: block; font-size: 17px; line-height: 1.1; }
-.tab-label { display: block; font-size: 10px; margin-top: 2px; }
+.tab-label { display: block; font-size: 9px; margin-top: 2px; letter-spacing: -0.01em; }
 .tab.on { color: #fff; }
 .tab.on .tab-label { font-weight: 600; }
 

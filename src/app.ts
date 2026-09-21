@@ -24,6 +24,7 @@ import {
   runningVersion,
   setUpdateUrl,
   updateUrl,
+  usingDefaultUpdateUrl,
 } from './updater.ts';
 import { button, clear, el, formatTime, paintArt, tintFor, ytThumb } from './ui/dom.ts';
 import type { MusicSource, PlayEvent, Prefs, Track, TrackId } from './types.ts';
@@ -64,7 +65,7 @@ const QUEUE_TARGET = 20;
 const CANDIDATE_FLOOR = 60;
 const QUEUE_LOW_WATER = 5;
 
-type TabName = 'home' | 'search' | 'library';
+type TabName = 'home' | 'search' | 'library' | 'settings';
 
 /**
  * Only music and Shorts are surfaced. Ordinary videos are dropped rather than
@@ -234,10 +235,10 @@ export class App {
     clear(this.root);
 
     const paneHost = el('div', 'panes');
-    for (const name of ['home', 'search', 'library'] as TabName[]) {
+    for (const name of ['home', 'search', 'library', 'settings'] as TabName[]) {
       const pane = el('section', 'pane');
       // Library styles its headings as settings groups; the others do not.
-      if (name === 'library') pane.id = 'dot-library';
+      if (name === 'library' || name === 'settings') pane.id = 'dot-' + name;
       pane.hidden = name !== this.active;
       this.panes.set(name, pane);
       paneHost.appendChild(pane);
@@ -247,6 +248,7 @@ export class App {
     this.buildHome(this.panes.get('home')!);
     this.buildSearch(this.panes.get('search')!);
     this.buildLibrary(this.panes.get('library')!);
+    this.buildSettings(this.panes.get('settings')!);
 
     this.buildMiniPlayer();
     this.buildTabBar();
@@ -263,6 +265,7 @@ export class App {
       ['home', '⌂', 'Home'],
       ['search', '⌕', 'Search'],
       ['library', '≡', 'Library'],
+      ['settings', '⚙', 'Settings'],
     ];
     for (const [name, glyph, label] of items) {
       const tab = button('tab');
@@ -281,6 +284,9 @@ export class App {
     for (const [key, pane] of this.panes) pane.hidden = key !== name;
     for (const [key, tab] of this.tabs) tab.classList.toggle('on', key === name);
     if (name === 'library') this.renderLibrary();
+    // Stats are read from storage, so they would otherwise show whatever was
+    // true when the shell was first built.
+    if (name === 'settings') this.renderStats();
   }
 
   /* ---------------------------------------------------------------------- home */
@@ -527,48 +533,12 @@ export class App {
 
   /* ------------------------------------------------------------------- library */
 
+  /** Things you have collected: liked tracks and the playlists you follow. */
   private buildLibrary(host: HTMLElement): void {
     host.appendChild(el('h1', 'greeting', 'Your library'));
 
     this.libraryList = el('div', 'list');
     host.appendChild(this.libraryList);
-
-    host.appendChild(el('h2', 'shelf-title', 'Discovery'));
-    host.appendChild(
-      el('p', 'muted', 'How often Dot takes a risk instead of playing it safe.'),
-    );
-
-    const slider = el('input', 'slider');
-    slider.type = 'range';
-    slider.id = 'dot-discovery';
-    slider.min = '0';
-    slider.max = '60';
-    slider.step = '5';
-    slider.value = String(Math.round(this.prefs.discovery * 100));
-
-    const readout = el('p', 'readout', slider.value + '% exploring');
-    slider.addEventListener('input', () => {
-      readout.textContent = slider.value + '% exploring';
-      this.prefs.discovery = Number(slider.value) / 100;
-      store.savePrefs(this.prefs);
-    });
-    host.appendChild(slider);
-    host.appendChild(readout);
-
-    this.buildTagPicker(
-      host,
-      'Music tags',
-      'Genres the Music feed is built from.',
-      this.prefs.musicTags,
-      SEED_TAGS,
-    );
-    this.buildTagPicker(
-      host,
-      'Shorts topics',
-      'Subjects, not genres. Leave empty and Shorts will follow your music tags instead.',
-      this.prefs.shortsTags,
-      SHORT_TOPICS,
-    );
 
     host.appendChild(el('h2', 'shelf-title', 'Playlists'));
     host.appendChild(
@@ -606,6 +576,50 @@ export class App {
 
     this.playlistList = el('div', 'list');
     host.appendChild(this.playlistList);
+
+  }
+
+  /** Everything configurable. Separated from Library so neither screen is
+   *  a long scroll of unrelated concerns. */
+  private buildSettings(host: HTMLElement): void {
+    host.appendChild(el('h1', 'greeting', 'Settings'));
+
+    host.appendChild(el('h2', 'shelf-title', 'Discovery'));
+    host.appendChild(
+      el('p', 'muted', 'How often Dot takes a risk instead of playing it safe.'),
+    );
+
+    const slider = el('input', 'slider');
+    slider.type = 'range';
+    slider.id = 'dot-discovery';
+    slider.min = '0';
+    slider.max = '60';
+    slider.step = '5';
+    slider.value = String(Math.round(this.prefs.discovery * 100));
+
+    const readout = el('p', 'readout', slider.value + '% exploring');
+    slider.addEventListener('input', () => {
+      readout.textContent = slider.value + '% exploring';
+      this.prefs.discovery = Number(slider.value) / 100;
+      store.savePrefs(this.prefs);
+    });
+    host.appendChild(slider);
+    host.appendChild(readout);
+
+    this.buildTagPicker(
+      host,
+      'Music tags',
+      'Genres the Music feed is built from.',
+      this.prefs.musicTags,
+      SEED_TAGS,
+    );
+    this.buildTagPicker(
+      host,
+      'Shorts topics',
+      'Subjects, not genres. Leave empty and Shorts will follow your music tags instead.',
+      this.prefs.shortsTags,
+      SHORT_TOPICS,
+    );
 
     host.appendChild(el('h2', 'shelf-title', 'Content'));
     host.appendChild(
@@ -701,7 +715,7 @@ export class App {
         'p',
         'muted',
         'Dot can fetch a new build itself, so most changes do not need the APK ' +
-          'reinstalled. Point this at a manifest and press check.',
+          'reinstalled. Leave the box empty to use the official build.',
       ),
     );
 
@@ -715,10 +729,10 @@ export class App {
     const urlField = el('input', 'search-input key-input');
     urlField.type = 'text';
     urlField.id = 'dot-update-url';
-    urlField.placeholder = 'https://…/dot/version.json';
+    urlField.placeholder = updateUrl();
     urlField.autocomplete = 'off';
     urlField.spellcheck = false;
-    urlField.value = updateUrl();
+    urlField.value = usingDefaultUpdateUrl() ? '' : updateUrl();
     urlField.addEventListener('change', () => setUpdateUrl(urlField.value));
     host.appendChild(urlField);
 
