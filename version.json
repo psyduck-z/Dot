@@ -1,5 +1,5 @@
 {
-  "version": "5b8c6da",
+  "version": "d3519b3",
   "bundle": "bundle.js",
-  "notes": "Take the heavy work off the per-track path"
+  "notes": "Add the app icon, and keep the screen awake while music plays"
 }
