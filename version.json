@@ -1,5 +1,5 @@
 {
-  "version": "df75759",
+  "version": "81724a1",
   "bundle": "bundle.js",
-  "notes": "Shorts: loop instead of advancing, drop the transport buttons"
+  "notes": "Put back and forward in the letterbox beside a Short"
 }
