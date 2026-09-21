@@ -1,5 +1,5 @@
 {
-  "version": "79ac4dc",
+  "version": "5037c2c",
   "bundle": "bundle.js",
-  "notes": "Skip videos that refuse to embed, and repair the Shorts control row"
+  "notes": "Stop the Music tab emptying, and make the scrubber draggable"
 }

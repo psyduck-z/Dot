@@ -743,12 +743,22 @@ body {
 }
 .np-why { margin: 8px 0 0; color: #1fd18c; font-size: 11px; }
 
+/* The visible bar stays 4px; the padding around it is what makes it
+   draggable with a finger. background-clip keeps the padding transparent so
+   the track still reads as a thin line. */
 .np-bar {
   height: 4px;
-  margin: 16px 0 6px;
+  margin: 14px 0 4px;
+  padding: 10px 0;
   border-radius: 2px;
   background: #4d4d4d;
-  overflow: hidden;
+  background-clip: content-box;
+  box-sizing: content-box;
+  cursor: pointer;
+}
+.np-fill {
+  border-radius: 2px;
+  background-clip: content-box;
 }
 .np-fill { width: 0; height: 100%; background: #fff; }
 
