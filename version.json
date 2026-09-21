@@ -1,5 +1,5 @@
 {
-  "version": "1ddbd4c",
+  "version": "e718414",
   "bundle": "bundle.js",
-  "notes": "Stop Shorts repeating, and make the feed react to being wrong"
+  "notes": "Hang the Shorts glow off the player instead of guessing where it falls"
 }
