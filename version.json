@@ -1,5 +1,5 @@
 {
-  "version": "c051b9d",
+  "version": "c4d4fea",
   "bundle": "bundle.js",
-  "notes": "Limit Shorts back-scroll to five"
+  "notes": "Bigger Shorts rails, and a channel feed that stays in the channel"
 }

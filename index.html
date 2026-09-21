@@ -634,16 +634,23 @@ body {
   background: #000;
 }
 /* Back and forward, living in the letterbox either side of a vertical Short.
-   Deliberately only the middle band of the height: the player draws its title
-   across the top of the iframe and its logo at the bottom, and these must not
-   land on either. */
+
+   As tall as they can safely be, which is not the full height. The player
+   draws its title across the top of the iframe and its share and logo along
+   the bottom, both at the iframe's edges rather than the picture's — so the
+   very top and bottom of this column belong to the player. Running to the
+   corners would sit on top of them.
+
+   18% to 84% clears both bands and still covers two thirds of the height,
+   which is enough to keep a pointer off the video and stop the player's own
+   overlay appearing. */
 .np-rail { display: none; }
 .np.shorts .np-rail {
   display: block;
   position: absolute;
-  top: 28%;
-  height: 44%;
-  width: 58px;
+  top: 18%;
+  height: 66%;
+  width: 62px;
   z-index: 4;
   padding: 0;
   border: 0;
