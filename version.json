@@ -1,5 +1,5 @@
 {
-  "version": "820b8c3",
+  "version": "a694b5f",
   "bundle": "bundle.js",
-  "notes": "Shorts scroll both ways and give the video the screen"
+  "notes": "Remove dead code and legacy CSS prefixes"
 }
