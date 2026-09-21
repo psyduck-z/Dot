@@ -4,10 +4,12 @@ import android.annotation.SuppressLint
 import android.os.Build
 import android.os.Bundle
 import android.view.View
+import android.view.WindowManager
 import android.view.ViewGroup
 import android.webkit.WebChromeClient
 import android.webkit.WebResourceRequest
 import android.webkit.WebResourceResponse
+import android.webkit.JavascriptInterface
 import android.webkit.WebView
 import android.webkit.WebViewClient
 import android.widget.FrameLayout
@@ -36,6 +38,7 @@ class MainActivity : Activity() {
     private var fullscreenView: View? = null
     private var fullscreenCallback: WebChromeClient.CustomViewCallback? = null
     private lateinit var chromeClient: WebChromeClient
+    @Volatile private var keepAwake = false
 
     @SuppressLint("SetJavaScriptEnabled")
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -99,8 +102,32 @@ class MainActivity : Activity() {
             webChromeClient = chromeClient
         }
 
+        webView.addJavascriptInterface(DotBridge(), "DotNative")
         setContentView(webView)
         webView.loadUrl("https://appassets.androidplatform.net/assets/index.html")
+    }
+
+    /**
+     * What the web layer can ask the shell for.
+     *
+     * Only one thing so far: hold the screen on while music plays, so the
+     * watch sleeping does not stop it. Note this keeps the display awake
+     * rather than playing with it off — audio continuing behind a hidden
+     * player is not something the embedded player's terms allow, and it is
+     * the difference between this and a background-playback feature.
+     */
+    inner class DotBridge {
+        @JavascriptInterface
+        fun setKeepAwake(on: Boolean) {
+            runOnUiThread {
+                keepAwake = on
+                if (on) {
+                    window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+                } else {
+                    window.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+                }
+            }
+        }
     }
 
     override fun onBackPressed() {
@@ -113,10 +140,11 @@ class MainActivity : Activity() {
 
     override fun onPause() {
         super.onPause()
-        // Without this the page keeps running with the screen off and drains the
-        // battery. Real background audio needs a foreground service, which the
-        // YouTube path cannot use anyway — its terms require a visible player.
-        webView.onPause()
+        // Pausing the WebView stops timers and media. That is right for saving
+        // battery when nothing is playing, and wrong mid-track, so the web
+        // layer says which it is. It still stops when the activity actually
+        // goes away; this only covers the screen dimming while music runs.
+        if (!keepAwake) webView.onPause()
     }
 
     override fun onResume() {

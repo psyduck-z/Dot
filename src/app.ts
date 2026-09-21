@@ -83,6 +83,13 @@ const SHORTS_BACK_LIMIT = 5;
 const FAMILIAR_PER_REFILL = 2;
 const FAMILIAR_COOLDOWN = 60;
 
+/** Injected by the Android shell. Absent in a browser. */
+declare global {
+  interface Window {
+    DotNative?: { setKeepAwake(on: boolean): void };
+  }
+}
+
 type TabName = 'home' | 'search' | 'library' | 'settings';
 
 /**
@@ -172,6 +179,8 @@ export class App {
   private playingPrevTags: string[] = [];
   /** Set when a render was skipped because Now Playing was covering it. */
   private homeStale = false;
+  /** Whether the shell is currently being asked to keep the screen on. */
+  private keepingAwake = false;
   /** Surfaces already auto-fetched once, so an empty one cannot loop. */
   private autoFilled = new Set<Surface>();
   /**
@@ -209,6 +218,7 @@ export class App {
       onProgress: (cur, dur) => this.renderProgress(cur, dur),
       onStateChange: (playing) => {
         this.renderPlayState(playing);
+        this.updateKeepAwake(playing);
         // Keyless playlists arrive as bare video ids, so the real title only
         // becomes available once the embedded player has loaded the video.
         if (playing) void this.captureYouTubeMetadata();
@@ -1625,6 +1635,31 @@ export class App {
     this.np.appendChild(sheet);
   }
 
+  /**
+   * Holds the screen on while music plays, so the watch sleeping does not stop
+   * it, and releases it otherwise.
+   *
+   * Music only. A Short is something watched, so nothing is gained by keeping
+   * the display awake for it beyond draining the battery — and the audio there
+   * is not meant to outlive looking at it.
+   *
+   * This keeps the display on rather than playing with it off. Audio behind a
+   * hidden player is not something the embedded player allows, so the wrist
+   * still has to be up; it just no longer has to be touched.
+   */
+  private updateKeepAwake(playing: boolean): void {
+    const isMusic = (this.player.track?.kind ?? 'music') !== 'short';
+    const want = playing && isMusic;
+    if (want === this.keepingAwake) return;
+    this.keepingAwake = want;
+
+    try {
+      window.DotNative?.setKeepAwake(want);
+    } catch {
+      /* not running in the shell */
+    }
+  }
+
   private openNowPlaying(): void {
     this.np.classList.add('open');
   }
@@ -1653,6 +1688,7 @@ export class App {
 
     // A video source needs a 16:9 stage; artwork-only tracks keep the square.
     const kind = track.kind ?? 'video';
+    this.updateKeepAwake(this.player.playing);
     this.np.classList.toggle('video', track.sourceId === 'youtube');
     this.np.classList.toggle('shorts', kind === 'short');
     this.npAdd.hidden = kind === 'short';
