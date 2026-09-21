@@ -944,6 +944,25 @@ body {
 .np.ambient { background: #000; }
 .np.ambient .yt-host { box-shadow: none; }
 
+/* The loading caption. Shown while a track is being fetched and cleared the
+   moment sound arrives, so it is only ever seen during a wait. Like the timing
+   line it is deliberately outside every rule that hides things in Shorts or
+   ambient — a wait is exactly when something should be on screen. */
+.np-loading {
+  margin: 10px 0 0;
+  min-height: 16px;
+  text-align: center;
+  color: #d8d8d8;
+  font-size: 13px;
+  font-style: italic;
+  letter-spacing: 0.01em;
+  animation: dot-fade-in 0.35s ease;
+}
+@keyframes dot-fade-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
 /* The start timing, directly under the controls. Deliberately absent from
    every list that hides things in Shorts or ambient — it was written twice
    into elements that were hidden in exactly the cases worth measuring. */

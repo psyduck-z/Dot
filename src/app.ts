@@ -90,6 +90,28 @@ const DIM_FLOOR = 0.01;
 /** The only sections long enough to be worth hiding. */
 const COLLAPSIBLE_SECTIONS = ['Music tags', 'Shorts topics'];
 
+/**
+ * Captions for the wait while a track loads, in escalating tiers.
+ *
+ * A blank screen for seven seconds reads as broken; the same seven seconds
+ * with something counting up reads as a joke the app is in on. The tiers are
+ * picked by how long it has actually taken, and each has several options so
+ * the same wait is not the same caption twice.
+ */
+const LOADING_CAPTIONS: readonly (readonly string[])[] = [
+  ['one moment later…', 'a second later…', 'shortly afterwards…'],
+  ['a few moments later…', 'some time later…', 'a short while later…'],
+  ['several hours later…', 'later that evening…', 'after a long walk…'],
+  ['three days later…', 'the following week…', 'a season later…'],
+  ['some years later…', 'a decade later…', 'much later…'],
+  ['two centuries later…', 'an age of the world later…', 'long after everyone forgot…'],
+  ['at the heat death of the universe…', 'eventually…', 'still later…'],
+];
+
+/** How long before the first caption, and between each escalation. */
+const CAPTION_DELAY_MS = 1200;
+const CAPTION_STEP_MS = 1800;
+
 /** Injected by the Android shell. Absent in a browser. */
 declare global {
   interface Window {
@@ -150,6 +172,9 @@ export class App {
   private npLike!: HTMLButtonElement;
   private npStatus!: HTMLElement;
   private npTiming!: HTMLElement;
+  private npLoading!: HTMLElement;
+  private captionTimer = 0;
+  private captionTier = 0;
   private npSource!: HTMLElement;
   private npAdd!: HTMLButtonElement;
 
@@ -258,7 +283,10 @@ export class App {
         if (playing) void this.captureYouTubeMetadata();
       },
       onPlayEvent: (event) => this.recordEvent(event),
-      onError: (message) => this.setStatus(message + ' — skipping'),
+      onError: (message) => {
+        this.stopLoadingCaptions();
+        this.setStatus(message + ' — skipping');
+      },
       onTrackChange: (track) => this.renderTrack(track),
     });
   }
@@ -1616,6 +1644,9 @@ export class App {
     hide.addEventListener('click', () => this.hideCurrent());
     this.np.appendChild(hide);
 
+    this.npLoading = el('p', 'np-loading', '');
+    this.np.appendChild(this.npLoading);
+
     this.npTiming = el('p', 'np-timing', '');
     this.np.appendChild(this.npTiming);
 
@@ -1936,6 +1967,7 @@ export class App {
   /** Records how long the two halves of this track start took. */
   private markStarted(): void {
     if (this.startedAt <= 0) return;
+    this.stopLoadingCaptions();
     const now = Date.now();
     const app = (this.handedOffAt || now) - this.startedAt;
     const player = now - (this.handedOffAt || this.startedAt);
@@ -1943,6 +1975,29 @@ export class App {
     this.startedAt = 0;
     console.info('start timing:', this.lastTiming);
     this.paintTiming();
+  }
+
+  /** Starts the escalating captions. Stops on its own once sound arrives. */
+  private startLoadingCaptions(): void {
+    this.stopLoadingCaptions();
+    this.captionTier = 0;
+
+    const tick = (): void => {
+      const tier = LOADING_CAPTIONS[Math.min(this.captionTier, LOADING_CAPTIONS.length - 1)];
+      if (tier) {
+        const choice = tier[Math.floor(Math.random() * tier.length)] ?? '';
+        this.npLoading.textContent = choice;
+      }
+      this.captionTier++;
+      this.captionTimer = window.setTimeout(tick, CAPTION_STEP_MS);
+    };
+    this.captionTimer = window.setTimeout(tick, CAPTION_DELAY_MS);
+  }
+
+  private stopLoadingCaptions(): void {
+    window.clearTimeout(this.captionTimer);
+    this.captionTimer = 0;
+    if (this.npLoading) this.npLoading.textContent = '';
   }
 
   private paintTiming(): void {
@@ -2202,6 +2257,7 @@ export class App {
 
     this.startedAt = Date.now();
     this.handedOffAt = 0;
+    this.startLoadingCaptions();
 
     // Start the player first. None of the bookkeeping below affects what is
     // about to be loaded, and doing it first put storage work between the tap
