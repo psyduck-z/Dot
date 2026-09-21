@@ -70,6 +70,13 @@ export interface MusicSource {
 
 export type BrowseKind = 'trending' | 'tag' | 'genre' | 'artist';
 
+/** A channel, as something you can follow and browse rather than a string. */
+export interface Channel {
+  id: string;
+  title: string;
+  thumbnailUrl?: string;
+}
+
 /** How a play ended. Drives the reward signal. */
 export type PlayOutcome =
   | 'completed'

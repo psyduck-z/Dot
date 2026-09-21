@@ -19,7 +19,7 @@
 import * as store from '../store.ts';
 import { blockReason } from './filter.ts';
 import { classifyKind, parseEmbedAspect } from './kind.ts';
-import type { BrowseKind, MusicSource, Track, TrackId } from '../types.ts';
+import type { BrowseKind, Channel, MusicSource, Track, TrackId } from '../types.ts';
 
 const API = 'https://www.googleapis.com/youtube/v3';
 /** Category 10 is Music. Keeps podcasts and vlogs out of a music feed. */
@@ -418,6 +418,80 @@ export class YouTubeSource implements MusicSource {
   }
 
 /**
+   * Names and avatars for channels already seen in results.
+   *
+   * One unit for up to fifty, so putting channels above the videos in search
+   * costs a single extra request no matter how many turn up.
+   */
+  async channelsByIds(ids: string[]): Promise<Channel[]> {
+    if (!this.configured || ids.length === 0) return [];
+
+    const wanted = ids.slice(0, 50);
+    const cacheKey = 'yt.chmeta.' + wanted.join(',');
+    const cached = store.cacheGet<Channel[]>(cacheKey, SEARCH_TTL_MS);
+    if (cached) return cached;
+
+    const payload = await this.getJson(
+      '/channels?part=snippet&maxResults=50&id=' + wanted.join(','),
+      COST_LIST,
+    );
+    const items = (
+      payload as {
+        items?: Array<{ id?: string; snippet?: { title?: string; thumbnails?: { default?: { url?: string }; medium?: { url?: string } } } }>;
+      } | null
+    )?.items;
+    if (!Array.isArray(items)) return [];
+
+    const out: Channel[] = [];
+    for (const item of items) {
+      if (!item.id || !item.snippet?.title) continue;
+      out.push({
+        id: item.id,
+        title: item.snippet.title,
+        thumbnailUrl: item.snippet.thumbnails?.medium?.url ?? item.snippet.thumbnails?.default?.url,
+      });
+    }
+    if (out.length > 0) store.cacheSet(cacheKey, out);
+    return out;
+  }
+
+  /** Everything a channel has uploaded, by channel id. Three units. */
+  async channelUploadsById(channelId: string, limit = 50): Promise<Track[]> {
+    if (!this.configured || !channelId) return [];
+
+    const cacheKey = 'yt.chid.' + channelId;
+    const cached = store.cacheGet<Track[]>(cacheKey, SEARCH_TTL_MS);
+    if (cached) return this.applyFilter(cached).slice(0, limit);
+
+    const channel = await this.getJson(
+      '/channels?part=contentDetails&id=' + encodeURIComponent(channelId),
+      COST_LIST,
+    );
+    const uploads = (
+      channel as { items?: Array<{ contentDetails?: { relatedPlaylists?: { uploads?: string } } }> } | null
+    )?.items?.[0]?.contentDetails?.relatedPlaylists?.uploads;
+    if (!uploads) return [];
+
+    const tracks = await this.uploadsPlaylist(uploads);
+    if (tracks.length > 0) store.cacheSet(cacheKey, tracks);
+    return this.applyFilter(tracks).slice(0, limit);
+  }
+
+  /** Pages an uploads playlist and hydrates what it finds. Two units. */
+  private async uploadsPlaylist(playlistId: string): Promise<Track[]> {
+    const page = await this.getJson(
+      '/playlistItems?part=contentDetails&maxResults=50&playlistId=' + encodeURIComponent(playlistId),
+      COST_LIST,
+    );
+    const ids = (
+      page as { items?: Array<{ contentDetails?: { videoId?: string } }> } | null
+    )?.items
+      ?.map((i) => i.contentDetails?.videoId)
+      .filter((id): id is string => typeof id === 'string') ?? [];
+    return ids.length === 0 ? [] : this.hydrate(ids);
+  }
+
+  /**
    * Everything a channel has uploaded, by @handle.
    *
    * Costs three quota units against search.list's hundred: one to turn the
@@ -443,18 +517,7 @@ export class YouTubeSource implements MusicSource {
     )?.items?.[0]?.contentDetails?.relatedPlaylists?.uploads;
     if (!uploads) return [];
 
-    const page = await this.getJson(
-      '/playlistItems?part=contentDetails&maxResults=50&playlistId=' + encodeURIComponent(uploads),
-      COST_LIST,
-    );
-    const ids = (
-      page as { items?: Array<{ contentDetails?: { videoId?: string } }> } | null
-    )?.items
-      ?.map((i) => i.contentDetails?.videoId)
-      .filter((id): id is string => typeof id === 'string') ?? [];
-    if (ids.length === 0) return [];
-
-    const tracks = await this.hydrate(ids);
+    const tracks = await this.uploadsPlaylist(uploads);
     if (tracks.length > 0) store.cacheSet(cacheKey, tracks);
     return this.applyFilter(tracks).slice(0, limit);
   }

@@ -23,6 +23,7 @@
 import { TasteModel } from './reco/model.ts';
 import {
   DEFAULT_PREFS,
+  type Channel,
   type PlayEvent,
   type Playlist,
   type Prefs,
@@ -42,6 +43,7 @@ const KEY = {
   ytCatalog: 'dot.ytcatalog.v1',
   quota: 'dot.quota.v1',
   hidden: 'dot.hidden.v1',
+  channels: 'dot.channels.v1',
 } as const;
 
 /** Keeps storage bounded; also the window used for repeat suppression. */
@@ -180,6 +182,32 @@ export function removeLikedTrack(id: TrackId): Track[] {
   const liked = loadLikedTracks().filter((t) => t.id !== id);
   write(KEY.liked, liked);
   return liked;
+}
+
+/**
+ * Channels the user follows. Stored whole so Library can list them with their
+ * names and avatars without spending a request to find out who they are.
+ */
+export function loadChannels(): Channel[] {
+  return read<Channel[]>(KEY.channels, []);
+}
+
+export function isFollowing(id: string): boolean {
+  return loadChannels().some((c) => c.id === id);
+}
+
+/** Follows or unfollows, and reports which it did. */
+export function toggleChannel(channel: Channel): boolean {
+  const all = loadChannels();
+  const at = all.findIndex((c) => c.id === channel.id);
+  if (at >= 0) {
+    all.splice(at, 1);
+    write(KEY.channels, all);
+    return false;
+  }
+  all.unshift(channel);
+  write(KEY.channels, all);
+  return true;
 }
 
 /**

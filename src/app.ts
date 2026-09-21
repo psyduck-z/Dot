@@ -27,7 +27,7 @@ import {
   usingDefaultUpdateUrl,
 } from './updater.ts';
 import { button, clear, el, formatTime, paintArt, tintFor, ytThumb } from './ui/dom.ts';
-import type { MusicSource, PlayEvent, Prefs, Track, TrackId } from './types.ts';
+import type { Channel, MusicSource, PlayEvent, Prefs, Track, TrackId } from './types.ts';
 import type { TrackKind } from './sources/kind.ts';
 
 /** Offered during onboarding and on the Search browse grid. Tags, not genres —
@@ -126,6 +126,7 @@ export class App {
   private surface: Surface = 'music';
   private searchScope: 'all' | Surface = 'all';
   private searchResults: RankedTrack[] = [];
+  private searchChannels!: HTMLElement;
   private surfaceTabs = new Map<Surface, HTMLButtonElement>();
   private homeBody!: HTMLElement;
   private hidden: Set<TrackId> = store.loadHidden();
@@ -134,6 +135,7 @@ export class App {
 
   private libraryList!: HTMLElement;
   private playlistList!: HTMLElement;
+  private channelList!: HTMLElement;
   private statsBox!: HTMLElement;
 
   constructor(root: HTMLElement) {
@@ -476,6 +478,9 @@ export class App {
     }
     host.appendChild(scopeBar);
 
+    this.searchChannels = el('div', 'list');
+    host.appendChild(this.searchChannels);
+
     const results = el('div', 'list');
     host.appendChild(results);
 
@@ -537,6 +542,81 @@ export class App {
 
     this.searchResults = ranked;
     this.paintSearchResults(results);
+    void this.paintSearchChannels(found);
+  }
+
+  /**
+   * Channels behind the results, listed above them.
+   *
+   * Derived from the videos already fetched rather than a separate channel
+   * search, which would cost another hundred units; naming and illustrating
+   * them costs one.
+   */
+  private async paintSearchChannels(found: Track[]): Promise<void> {
+    clear(this.searchChannels);
+
+    const ids: string[] = [];
+    for (const track of found) {
+      if (track.artistId && ids.indexOf(track.artistId) < 0) ids.push(track.artistId);
+    }
+    if (ids.length === 0) return;
+
+    const channels = await this.youtube.channelsByIds(ids.slice(0, 8));
+    if (channels.length === 0) return;
+
+    clear(this.searchChannels);
+    this.searchChannels.appendChild(el('h2', 'shelf-title', 'Channels'));
+    for (const channel of channels) {
+      this.searchChannels.appendChild(this.channelRow(channel));
+    }
+  }
+
+  /** A channel: tap the row to browse it, tap the heart to follow it. */
+  private channelRow(channel: Channel): HTMLElement {
+    const row = el('div', 'row');
+
+    const open = button('row-main row-open row-channel');
+    const art = el('div', 'row-art row-avatar');
+    paintArt(art, channel.thumbnailUrl, channel.title, '@', true);
+    open.appendChild(art);
+
+    const text = el('div', 'row-main');
+    text.appendChild(el('span', 'row-title', channel.title));
+    text.appendChild(el('span', 'row-sub', 'Channel'));
+    open.appendChild(text);
+    open.addEventListener('click', () => void this.openChannel(channel));
+    row.appendChild(open);
+
+    const follow = button('mini-btn', store.isFollowing(channel.id) ? '♥' : '♡', 'Follow channel');
+    follow.classList.toggle('on', store.isFollowing(channel.id));
+    follow.addEventListener('click', () => {
+      const now = store.toggleChannel(channel);
+      follow.textContent = now ? '♥' : '♡';
+      follow.classList.toggle('on', now);
+      this.renderLibrary();
+    });
+    row.appendChild(follow);
+
+    return row;
+  }
+
+  /** Replaces the search results with everything one channel has uploaded. */
+  private async openChannel(channel: Channel): Promise<void> {
+    this.show('search');
+    clear(this.searchChannels);
+    this.searchChannels.appendChild(this.channelRow(channel));
+
+    const results = this.searchChannels.nextElementSibling as HTMLElement | null;
+    if (!results) return;
+    clear(results);
+    results.appendChild(el('p', 'empty', 'Loading ' + channel.title + '…'));
+
+    const tracks = await this.youtube.channelUploadsById(channel.id, 50);
+    const bucket = contextBucket();
+    this.searchResults = tracks
+      .filter((track) => !this.hidden.has(track.id))
+      .map((track) => ({ track, score: this.model.score(featurize(track, bucket)), explored: false }));
+    this.paintSearchResults(results);
   }
 
   /**
@@ -589,6 +669,10 @@ export class App {
 
     this.libraryList = el('div', 'list');
     host.appendChild(this.libraryList);
+
+    host.appendChild(el('h2', 'shelf-title', 'Following'));
+    this.channelList = el('div', 'list');
+    host.appendChild(this.channelList);
 
     host.appendChild(el('h2', 'shelf-title', 'Playlists'));
 
@@ -651,6 +735,20 @@ export class App {
 
       this.playlistList.appendChild(row);
     }
+  }
+
+  private renderChannels(): void {
+    if (!this.channelList) return;
+    clear(this.channelList);
+
+    const channels = store.loadChannels();
+    if (channels.length === 0) {
+      this.channelList.appendChild(
+        el('p', 'empty', 'No channels yet. Follow one from search.'),
+      );
+      return;
+    }
+    for (const channel of channels) this.channelList.appendChild(this.channelRow(channel));
   }
 
   private async playPlaylist(id: string): Promise<void> {
@@ -935,6 +1033,7 @@ export class App {
     }
 
     if (this.statsBox) this.renderStats();
+    this.renderChannels();
     this.renderPlaylists();
   }
 
