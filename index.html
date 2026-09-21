@@ -167,6 +167,33 @@ body {
 /* In Library a heading starts a settings group, so it gets a rule above it.
    :first-of-type would also match inside Home, hence the explicit scope. */
 .pane .shelf-title + .muted { margin-top: -4px; }
+/* Settings sections, closed until asked for. The marker turns rather than
+   the row moving, so opening one does not shift the others under the finger. */
+.section-toggle {
+  display: block;
+  width: 100%;
+  margin: 0;
+  padding: 15px 2px;
+  border: 0;
+  border-top: 1px solid #1c1c1c;
+  background: transparent;
+  color: #fff;
+  font-family: inherit;
+  font-size: 15px;
+  font-weight: 700;
+  text-align: left;
+  cursor: pointer;
+}
+.section-toggle:after {
+  content: 'a';
+  float: right;
+  color: #7a7a7a;
+  transition: transform 0.15s ease;
+  display: inline-block;
+}
+.section-toggle.open:after { transform: rotate(90deg); }
+.section-body { padding-bottom: 10px; }
+
 #dot-library .shelf-title,
 #dot-settings .shelf-title {
   margin-top: 26px;

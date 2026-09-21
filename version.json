@@ -1,5 +1,5 @@
 {
-  "version": "e1d0e49",
+  "version": "553efa6",
   "bundle": "bundle.js",
-  "notes": "Shrink what is stored and stop reading it during startup"
+  "notes": "Take storage off the play path, and collapse the Settings sections"
 }
