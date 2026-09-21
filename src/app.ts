@@ -72,6 +72,16 @@ const QUEUE_CAP = 120;
  * as anyone reaches for the one they just scrolled past.
  */
 const SHORTS_BACK_LIMIT = 5;
+/**
+ * How many liked tracks get folded back into a refill, and how long one has to
+ * stay away before it qualifies.
+ *
+ * Repeat suppression is right for discovery and wrong for music: a feed that
+ * never replays anything you liked is a feed of strangers. These bypass the
+ * history exclusion deliberately — that is the whole point of them.
+ */
+const FAMILIAR_PER_REFILL = 2;
+const FAMILIAR_COOLDOWN = 60;
 
 type TabName = 'home' | 'search' | 'library' | 'settings';
 
@@ -158,6 +168,8 @@ export class App {
   private skipStreak = 0;
   /** True mid-drag on the scrubber, so progress updates do not fight it. */
   private seeking = false;
+  /** Tags of the track playing before this one, for transition scoring. */
+  private playingPrevTags: string[] = [];
   /** Surfaces already auto-fetched once, so an empty one cannot loop. */
   private autoFilled = new Set<Surface>();
   /**
@@ -1745,7 +1757,10 @@ export class App {
         exclude: new Set([...store.loadHistory(), ...this.hidden]),
         bucket: contextBucket(),
         fatigue: this.tagFatigue,
+        previousTags: this.player.track?.tags.slice(0, 3) ?? [],
       });
+
+      this.mixInFamiliar();
 
       this.lastFill.kept = this.queue.length;
 
@@ -1761,7 +1776,43 @@ export class App {
     }
   }
 
+  /**
+   * Folds a couple of liked tracks back into the queue.
+   *
+   * They are placed a few slots in rather than at the front, so a refill does
+   * not always open with something already known, and they carry their real
+   * score so the ranking still decides where they sit relative to each other.
+   */
+  private mixInFamiliar(): void {
+    const recent = new Set(store.loadHistory().slice(-FAMILIAR_COOLDOWN));
+    const queued = new Set(this.queue.map((r) => r.track.id));
+    const bucket = contextBucket();
+
+    const familiar = store
+      .loadLikedTracks()
+      .filter(
+        (t) =>
+          (t.kind ?? 'music') !== 'video' &&
+          !recent.has(t.id) &&
+          !queued.has(t.id) &&
+          !this.hidden.has(t.id),
+      )
+      .slice(0, FAMILIAR_PER_REFILL);
+
+    familiar.forEach((track, i) => {
+      const at = Math.min(this.queue.length, 2 + i * 3);
+      this.queue.splice(at, 0, {
+        track,
+        score: this.model.score(featurize(track, bucket, this.playingPrevTags)),
+        explored: false,
+      });
+    });
+  }
+
   private async playTrack(ranked: RankedTrack): Promise<void> {
+    // Captured before the swap, so the model is updated with the same context
+    // it was scored under rather than with its own tags.
+    this.playingPrevTags = this.player.track?.tags.slice(0, 3) ?? [];
     this.currentRanked = ranked;
     const source = this.sources.find((s) => s.id === ranked.track.sourceId);
     if (!source) {
@@ -1828,7 +1879,7 @@ export class App {
     const track = this.player.track;
     if (!track) return;
 
-    this.model.update(featurize(track, event.contextBucket), labelFor(event));
+    this.model.update(featurize(track, event.contextBucket, this.playingPrevTags), labelFor(event));
     store.saveModel(this.model);
     store.appendEvent(event);
 

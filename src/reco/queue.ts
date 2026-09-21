@@ -53,6 +53,8 @@ export interface RankOptions {
    * diversity constraints this is soft and it resets when the app does.
    */
   fatigue?: ReadonlyMap<string, number>;
+  /** Tags of the track that just played, for transition scoring. */
+  previousTags?: string[];
 }
 
 export interface RankedTrack {
@@ -104,7 +106,9 @@ export function buildQueue(
     seen.add(track.id);
     pool.push({
       track,
-      score: model.score(featurize(track, options.bucket)) - fatigueFor(track, options.fatigue),
+      score:
+        model.score(featurize(track, options.bucket, options.previousTags)) -
+        fatigueFor(track, options.fatigue),
       explored: false,
     });
   }

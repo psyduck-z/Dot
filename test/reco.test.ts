@@ -262,3 +262,45 @@ test('no fatigue map leaves scoring untouched', () => {
   });
   assert.equal(plain[0]!.score, empty[0]!.score);
 });
+
+test('the model learns which track follows which', () => {
+  // Sequence is the thing a per-track model cannot express: the same song can
+  // be right after one track and wrong after another.
+  const model = new TasteModel();
+  const heavy = track('h', ['phonk'], 'a1');
+  const calm = track('c', ['ambient'], 'a2');
+
+  // Heavy after heavy lands; heavy straight after calm does not.
+  for (let i = 0; i < 40; i++) {
+    model.update(featurize(heavy, 0, ['phonk']), labelFor(event('completed', 1)));
+    model.update(featurize(heavy, 0, ['ambient']), labelFor(event('skipped', 0.05)));
+  }
+
+  assert.ok(
+    model.score(featurize(heavy, 0, ['phonk'])) > model.score(featurize(heavy, 0, ['ambient'])),
+    'the same track should score differently depending on what preceded it',
+  );
+});
+
+test('transition context is optional and changes nothing when absent', () => {
+  const model = new TasteModel();
+  const t = track('t', ['phonk'], 'a1');
+  assert.equal(model.score(featurize(t, 0)), model.score(featurize(t, 0, [])));
+});
+
+test('ranking can be given the transition context', () => {
+  const model = new TasteModel();
+  const after = track('after', ['phonk'], 'a1');
+  for (let i = 0; i < 30; i++) {
+    model.update(featurize(after, 0, ['phonk']), labelFor(event('liked', 1)));
+  }
+
+  const withContext = buildQueue([after], model, {
+    count: 1, discovery: 0, bucket: 0, random: () => 0.99, previousTags: ['phonk'],
+  });
+  const without = buildQueue([after], model, {
+    count: 1, discovery: 0, bucket: 0, random: () => 0.99,
+  });
+
+  assert.ok(withContext[0]!.score > without[0]!.score);
+});

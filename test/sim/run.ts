@@ -41,6 +41,24 @@ const TAG_VOCAB = [
   'classical', 'orchestral', 'folk', 'country', 'reggae',
 ];
 
+/**
+ * Transitions the listener secretly cares about, on top of the tag preferences
+ * below. A track is more welcome after some things than others, which is the
+ * whole point of the flow features — a model scoring tracks in isolation
+ * cannot represent this no matter how much data it sees.
+ */
+const HIDDEN_TRANSITIONS: Record<string, number> = {
+  'phonk>driftphonk': 1.6,
+  'driftphonk>phonk': 1.6,
+  'phonk>memphis': 1.2,
+  'ambient>lofi': 1.2,
+  'lofi>ambient': 1.2,
+  // Jarring: loud straight after quiet.
+  'ambient>breakcore': -1.8,
+  'lofi>phonk': -1.5,
+  'piano>bassboost': -1.8,
+};
+
 /** What the listener secretly likes. The model must infer this from behaviour. */
 const HIDDEN_PREFS: Record<string, number> = {
   phonk: 2.2, driftphonk: 2.0, memphis: 1.4, bassboost: 1.0, trap: 0.9,
@@ -72,15 +90,23 @@ function makeCatalog(rand: () => number, size: number): Track[] {
   return tracks;
 }
 
-/** The listener's true probability of enjoying a track. */
-function trueAffinity(track: Track): number {
+/** The listener's true probability of enjoying a track, given what preceded it. */
+function trueAffinity(track: Track, previousTags: string[] = []): number {
   let z = -0.4;
   for (const tag of track.tags) z += HIDDEN_PREFS[tag] ?? 0;
+  for (const from of previousTags) {
+    for (const to of track.tags) z += HIDDEN_TRANSITIONS[from + '>' + to] ?? 0;
+  }
   return 1 / (1 + Math.exp(-z));
 }
 
-function simulatePlay(track: Track, rand: () => number, bucket: number): PlayEvent {
-  const p = trueAffinity(track);
+function simulatePlay(
+  track: Track,
+  rand: () => number,
+  bucket: number,
+  previousTags: string[] = [],
+): PlayEvent {
+  const p = trueAffinity(track, previousTags);
   const enjoyed = rand() < p;
 
   if (enjoyed) {
@@ -111,12 +137,20 @@ interface RunResult {
   finalNovelty: number;
 }
 
-function run(opts: { seed: number; plays: number; useModel: boolean; discovery: number }): RunResult {
+function run(opts: {
+  seed: number;
+  plays: number;
+  useModel: boolean;
+  discovery: number;
+  /** Whether the model is told what played before. */
+  useContext?: boolean;
+}): RunResult {
   const rand = mulberry32(opts.seed);
   const catalog = makeCatalog(rand, 600);
   const model = new TasteModel();
 
   const played = new Set<string>();
+  let previousTags: string[] = [];
   const servedAffinity: number[] = [];
   const servedTags: string[][] = [];
 
@@ -136,6 +170,7 @@ function run(opts: { seed: number; plays: number; useModel: boolean; discovery: 
           exclude,
           bucket: 2,
           random: rand,
+          previousTags: opts.useContext ? previousTags : undefined,
         })
       : catalog
           .filter((t) => !exclude.has(t.id))
@@ -148,12 +183,16 @@ function run(opts: { seed: number; plays: number; useModel: boolean; discovery: 
     for (const { track } of queue) {
       if (servedAffinity.length >= opts.plays) break;
 
-      servedAffinity.push(trueAffinity(track));
+      servedAffinity.push(trueAffinity(track, previousTags));
       servedTags.push(track.tags);
       played.add(track.id);
 
-      const event = simulatePlay(track, rand, 2);
-      model.update(featurize(track, event.contextBucket), labelFor(event));
+      const event = simulatePlay(track, rand, 2, previousTags);
+      model.update(
+        featurize(track, event.contextBucket, opts.useContext ? previousTags : []),
+        labelFor(event),
+      );
+      previousTags = track.tags.slice(0, 3);
 
       if (servedAffinity.length % 10 === 0) {
         const recentAff = servedAffinity.slice(-WINDOW);
@@ -190,7 +229,13 @@ export function main(): void {
   const SEEDS = [1, 7, 42, 1337, 90210];
 
   const modelRuns = SEEDS.map((seed) =>
-    run({ seed, plays: PLAYS, useModel: true, discovery: 0.2 }),
+    run({ seed, plays: PLAYS, useModel: true, discovery: 0.2, useContext: true }),
+  );
+  // Same listener, same seeds, but the model is not told what preceded each
+  // track. The gap between this and the run above is what the transition
+  // features are worth.
+  const blindRuns = SEEDS.map((seed) =>
+    run({ seed, plays: PLAYS, useModel: true, discovery: 0.2, useContext: false }),
   );
   const randomRuns = SEEDS.map((seed) =>
     run({ seed, plays: PLAYS, useModel: false, discovery: 0 }),
@@ -217,6 +262,10 @@ export function main(): void {
   console.log('  satisfaction, last 50 plays    %s', modelSat.toFixed(3));
   console.log('  satisfaction, random baseline  %s', randomSat.toFixed(3));
   console.log('  lift over random               %sx', (modelSat / randomSat).toFixed(2));
+  console.log(
+    '  without transition context     %s',
+    mean(blindRuns.map((r) => r.finalSatisfaction)).toFixed(3),
+  );
   console.log('  distinct tags served (model)   %s of %d', modelNov.toFixed(1), TAG_VOCAB.length);
   console.log('  distinct tags served (random)  %s of %d', randomNov.toFixed(1), TAG_VOCAB.length);
   console.log('');

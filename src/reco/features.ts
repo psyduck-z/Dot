@@ -56,6 +56,7 @@ export function contextBucket(date: Date = new Date()): number {
 }
 
 const WEIGHT = {
+  flow: 0.45,
   kind: 0.7,
   kindTag: 0.5,
   tag: 1.0,
@@ -93,7 +94,17 @@ function popularityBucket(playCount: number | undefined): string {
 /** How many of a track's tags also get a time-of-day interaction feature. */
 const TAG_CONTEXT_LIMIT = 8;
 
-export function featurize(track: Track, bucket: number): SparseVec {
+/**
+ * `previousTags` are the tags of the track that just played.
+ *
+ * Music is sequential in a way a feed of clips is not: the same song can be
+ * right after one track and wrong after another, and a model that sees tracks
+ * only in isolation cannot express that. Pairing the outgoing tags with the
+ * incoming ones lets it learn transitions — that heavy follows heavy, or where
+ * an evening tends to drift — rather than only which tracks are good on
+ * average.
+ */
+export function featurize(track: Track, bucket: number, previousTags: string[] = []): SparseVec {
   const acc = new Map<number, number>();
 
   const add = (key: string, weight: number): void => {
@@ -131,6 +142,16 @@ export function featurize(track: Track, bucket: number): SparseVec {
 
   for (const tag of tags.slice(0, TAG_CONTEXT_LIMIT)) {
     add('tagctx:' + tag + ':' + bucket, WEIGHT.tagContext);
+  }
+
+  // Three by three, deliberately. Every extra pair is another sparse feature
+  // competing for the same evidence, and transitions refine taste rather than
+  // replace it.
+  const previous = previousTags.map(normalizeTag).filter((t) => t.length > 0).slice(0, 3);
+  for (const from of previous) {
+    for (const to of tags.slice(0, 3)) {
+      add('flow:' + from + '>' + to, WEIGHT.flow);
+    }
   }
 
   return l2normalize(acc);
