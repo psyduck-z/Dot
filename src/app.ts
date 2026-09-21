@@ -185,6 +185,8 @@ export class App {
   private playingPrevTags: string[] = [];
   /** Set when a render was skipped because Now Playing was covering it. */
   private homeStale = false;
+  /** Screens already constructed. The rest wait until they are opened. */
+  private built = new Set<TabName>();
   /** Whether the shell is currently being asked to keep the screen on. */
   private keepingAwake = false;
   private ambientTimer = 0;
@@ -322,10 +324,11 @@ export class App {
     }
     this.root.appendChild(paneHost);
 
-    this.buildHome(this.panes.get('home')!);
-    this.buildSearch(this.panes.get('search')!);
-    this.buildLibrary(this.panes.get('library')!);
-    this.buildSettings(this.panes.get('settings')!);
+    // Only the visible screen is built. Search, Library and Settings between
+    // them make close to a hundred chips, tiles, sliders and inputs, none of
+    // which anyone is looking at on launch — and on a watch that is most of
+    // the time between tapping the icon and seeing something.
+    this.buildPane(this.active);
 
     this.buildMiniPlayer();
     this.buildTabBar();
@@ -372,9 +375,24 @@ export class App {
     void this.refillQueue().then(() => this.renderHome());
   }
 
+  /** Builds a screen the first time it is needed, then leaves it alone. */
+  private buildPane(name: TabName): void {
+    if (this.built.has(name)) return;
+    this.built.add(name);
+
+    const host = this.panes.get(name);
+    if (!host) return;
+
+    if (name === 'home') this.buildHome(host);
+    else if (name === 'search') this.buildSearch(host);
+    else if (name === 'library') this.buildLibrary(host);
+    else if (name === 'settings') this.buildSettings(host);
+  }
+
   private show(name: TabName): void {
     // The channel view lives in Search; leaving it returns to the mixed feed.
     if (name !== 'search') this.releaseChannel();
+    this.buildPane(name);
     this.active = name;
     for (const [key, pane] of this.panes) pane.hidden = key !== name;
     for (const [key, tab] of this.tabs) tab.classList.toggle('on', key === name);
@@ -1318,6 +1336,8 @@ export class App {
   }
 
   private renderLibrary(): void {
+    // Reachable from a follow button in Search, before Library has been built.
+    if (!this.libraryList) return;
     clear(this.libraryList);
 
     const liked = store.loadLikedTracks();
@@ -1345,6 +1365,7 @@ export class App {
   }
 
   private renderStats(): void {
+    if (!this.statsBox) return;
     clear(this.statsBox);
     const events = store.loadEvents();
     const epsilon = exploreRate(this.prefs.discovery, this.model.n);

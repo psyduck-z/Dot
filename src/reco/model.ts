@@ -20,7 +20,35 @@
 import { FEATURE_DIM, unitFeature, seedFeatureKey, type SparseVec } from './features.ts';
 import type { PlayEvent } from '../types.ts';
 
-export const MODEL_VERSION = 1;
+export const MODEL_VERSION = 2;
+
+/**
+ * Weights are stored as base64 of the raw float bytes rather than as a JSON
+ * array of numbers.
+ *
+ * The array form was about forty kilobytes of text that had to be parsed into
+ * four thousand numbers and then copied into typed arrays, every launch. The
+ * bytes are eight kilobytes, and decoding them is a loop over a string. On a
+ * watch that difference is felt at startup.
+ */
+function encodeFloats(values: Float32Array): string {
+  const bytes = new Uint8Array(values.buffer, values.byteOffset, values.byteLength);
+  let binary = '';
+  for (let i = 0; i < bytes.length; i++) binary += String.fromCharCode(bytes[i]!);
+  return btoa(binary);
+}
+
+function decodeFloats(encoded: string, length: number): Float32Array | null {
+  try {
+    const binary = atob(encoded);
+    if (binary.length !== length * 4) return null;
+    const bytes = new Uint8Array(binary.length);
+    for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+    return new Float32Array(bytes.buffer);
+  } catch {
+    return null;
+  }
+}
 
 export interface ModelSnapshot {
   version: number;
@@ -194,25 +222,38 @@ export class TasteModel {
   }
 
   /** Plain-array form for the localStorage mirror, where typed arrays don't survive. */
-  toJSON(): { version: number; w: number[]; accum: number[]; n: number } {
+  toJSON(): { version: number; w: string; accum: string; n: number } {
     return {
       version: MODEL_VERSION,
-      w: Array.from(this.w),
-      accum: Array.from(this.accum),
+      w: encodeFloats(this.w),
+      accum: encodeFloats(this.accum),
       n: this.updates,
     };
   }
 
   static fromJSON(raw: unknown): TasteModel | null {
     if (!raw || typeof raw !== 'object') return null;
-    const o = raw as { version?: number; w?: number[]; accum?: number[]; n?: number };
-    if (o.version !== MODEL_VERSION || !Array.isArray(o.w) || !Array.isArray(o.accum)) return null;
-    if (o.w.length !== FEATURE_DIM || o.accum.length !== FEATURE_DIM) return null;
-    return new TasteModel({
-      version: MODEL_VERSION,
-      w: Float32Array.from(o.w),
-      accum: Float32Array.from(o.accum),
-      n: typeof o.n === 'number' ? o.n : 0,
-    });
+    const o = raw as { version?: number; w?: unknown; accum?: unknown; n?: number };
+    const n = typeof o.n === 'number' ? o.n : 0;
+
+    if (o.version === MODEL_VERSION && typeof o.w === 'string' && typeof o.accum === 'string') {
+      const w = decodeFloats(o.w, FEATURE_DIM);
+      const accum = decodeFloats(o.accum, FEATURE_DIM);
+      if (!w || !accum) return null;
+      return new TasteModel({ version: MODEL_VERSION, w, accum, n });
+    }
+
+    // Version 1 kept plain arrays. Read them so nothing already learned is
+    // thrown away; it is written back in the compact form on the next save.
+    if (o.version === 1 && Array.isArray(o.w) && Array.isArray(o.accum)) {
+      if (o.w.length !== FEATURE_DIM || o.accum.length !== FEATURE_DIM) return null;
+      return new TasteModel({
+        version: MODEL_VERSION,
+        w: Float32Array.from(o.w as number[]),
+        accum: Float32Array.from(o.accum as number[]),
+        n,
+      });
+    }
+    return null;
   }
 }
