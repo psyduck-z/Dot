@@ -944,6 +944,18 @@ body {
 .np.ambient { background: #000; }
 .np.ambient .yt-host { box-shadow: none; }
 
+/* The start timing, directly under the controls. Deliberately absent from
+   every list that hides things in Shorts or ambient — it was written twice
+   into elements that were hidden in exactly the cases worth measuring. */
+.np-timing {
+  margin: 8px 0 0;
+  min-height: 14px;
+  text-align: center;
+  color: #1fd18c;
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+}
+
 .np-status { display: none; }
 
 /* A button that fills a row, for playlist rows that also carry a delete. */

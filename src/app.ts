@@ -149,6 +149,7 @@ export class App {
   private npPlay!: HTMLButtonElement;
   private npLike!: HTMLButtonElement;
   private npStatus!: HTMLElement;
+  private npTiming!: HTMLElement;
   private npSource!: HTMLElement;
   private npAdd!: HTMLButtonElement;
 
@@ -240,21 +241,18 @@ export class App {
     this.player.setVolume(this.prefs.volume);
     this.ytEngine.setCaptionsEnabled(this.prefs.captionsEnabled);
     this.player.addListener({
-      onProgress: (cur, dur) => this.renderProgress(cur, dur),
+      onProgress: (cur, dur) => {
+        // Belt and braces: if the playing event is missed, sound has clearly
+        // started by the time progress is moving.
+        if (this.startedAt > 0 && cur > 0) this.markStarted();
+        this.renderProgress(cur, dur);
+      },
       onStateChange: (playing) => {
         this.renderPlayState(playing);
-        if (playing && this.startedAt > 0) {
-          const now = Date.now();
-          const app = (this.handedOffAt || now) - this.startedAt;
-          const player = now - (this.handedOffAt || this.startedAt);
-          this.lastTiming = 'app ' + app + 'ms · player ' + (player / 1000).toFixed(1) + 's';
-          this.startedAt = 0;
-          console.info('start timing:', this.lastTiming);
-          this.setStatus(this.lastTiming);
-          this.paintTiming();
-        }
+        // markStarted is a no-op unless a start is actually being timed.
+        if (playing) this.markStarted();
         this.updateKeepAwake(playing);
-    this.scheduleAmbient();
+        this.scheduleAmbient();
         // Keyless playlists arrive as bare video ids, so the real title only
         // becomes available once the embedded player has loaded the video.
         if (playing) void this.captureYouTubeMetadata();
@@ -1616,6 +1614,9 @@ export class App {
     hide.addEventListener('click', () => this.hideCurrent());
     this.np.appendChild(hide);
 
+    this.npTiming = el('p', 'np-timing', '');
+    this.np.appendChild(this.npTiming);
+
     this.npStatus = el('p', 'np-status', '');
     this.np.appendChild(this.npStatus);
 
@@ -1930,12 +1931,28 @@ export class App {
    * music spends most of its time — so the player stops being asked at all
    * rather than twice a second for a number nobody reads.
    */
+  /** Records how long the two halves of this track start took. */
+  private markStarted(): void {
+    if (this.startedAt <= 0) return;
+    const now = Date.now();
+    const app = (this.handedOffAt || now) - this.startedAt;
+    const player = now - (this.handedOffAt || this.startedAt);
+    this.lastTiming = 'app ' + app + 'ms · player ' + (player / 1000).toFixed(1) + 's';
+    this.startedAt = 0;
+    console.info('start timing:', this.lastTiming);
+    this.paintTiming();
+  }
+
   private paintTiming(): void {
-    if (!this.timingLine) return;
-    const warm = this.ytEngine.isWarm() ? 'ready' : 'not ready';
-    this.timingLine.textContent = this.lastTiming
-      ? 'Last start: ' + this.lastTiming + ' · player ' + warm + ' at launch'
-      : 'Play something, then come back for the start timing.';
+    const warm = this.ytEngine.isWarm() ? 'warm' : 'cold';
+    if (this.npTiming) {
+      this.npTiming.textContent = this.lastTiming ? this.lastTiming + ' · ' + warm : '';
+    }
+    if (this.timingLine) {
+      this.timingLine.textContent = this.lastTiming
+        ? 'Last start: ' + this.lastTiming + ' · player ' + warm + ' at launch'
+        : 'Play something, then come back for the start timing.';
+    }
   }
 
   private tunePolling(): void {
