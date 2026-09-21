@@ -417,6 +417,9 @@ body {
   color: #1fd18c;
 }
 
+/* The one action on the Music screen that needs to be obvious. */
+.endless { margin-bottom: 16px; }
+
 .danger {
   display: block;
   width: 100%;
@@ -878,7 +881,24 @@ body {
 .np.shorts .np-why,
 .np.shorts .np-bar,
 .np.shorts .np-times,
-.np.shorts .np-status { display: none; }
+.np.shorts /* Music playing, nothing touched for a while. Everything but the player goes
+   dark; on an OLED an unlit pixel costs nothing, so this is most of the saving
+   available while the screen still has to be on. Tapping brings it back. */
+.np.ambient .np-head,
+.np.ambient .np-title,
+.np.ambient .np-artist,
+.np.ambient .np-why,
+.np.ambient .np-bar,
+.np.ambient .np-times,
+.np.ambient .np-controls,
+.np.ambient .np-hide,
+.np.ambient .np-status,
+.np.ambient .np-backdrop,
+.np.ambient .np-rail { opacity: 0; pointer-events: none; }
+.np.ambient { background: #000; }
+.np.ambient .yt-host { box-shadow: none; }
+
+.np-status { display: none; }
 
 /* A button that fills a row, for playlist rows that also carry a delete. */
 .row-open {

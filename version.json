@@ -1,5 +1,5 @@
 {
-  "version": "d3519b3",
+  "version": "92dbb93",
   "bundle": "bundle.js",
-  "notes": "Add the app icon, and keep the screen awake while music plays"
+  "notes": "Make the screen-on cost optional, dim it, and put the endless mix back"
 }
