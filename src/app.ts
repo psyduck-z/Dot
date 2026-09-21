@@ -304,7 +304,25 @@ export class App {
     this.root.appendChild(nav);
   }
 
+  /**
+   * Leaves channel mode and puts the mixed feed back.
+   *
+   * Clearing the flag is not enough on its own: the queue is still full of
+   * that channel's uploads, and the Shorts top-up only runs when the queue is
+   * nearly empty, so the feed would stay on that channel until it ran out.
+   * The queue has to go with it.
+   */
+  private releaseChannel(): void {
+    if (!this.channelLocked && !this.channelPool) return;
+    this.channelLocked = false;
+    this.channelPool = null;
+    this.queue = [];
+    void this.refillQueue().then(() => this.renderHome());
+  }
+
   private show(name: TabName): void {
+    // The channel view lives in Search; leaving it returns to the mixed feed.
+    if (name !== 'search') this.releaseChannel();
     this.active = name;
     for (const [key, pane] of this.panes) pane.hidden = key !== name;
     for (const [key, tab] of this.tabs) tab.classList.toggle('on', key === name);
@@ -331,6 +349,8 @@ export class App {
       const tab = button('seg', label);
       if (kind === this.surface) tab.classList.add('on');
       tab.addEventListener('click', () => {
+        // Switching surfaces is a return to the mixed feed too.
+        this.releaseChannel();
         this.surface = kind;
         for (const [key, node] of this.surfaceTabs) node.classList.toggle('on', key === kind);
         this.renderHome();
