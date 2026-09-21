@@ -160,6 +160,13 @@ export class App {
   private seeking = false;
   /** Surfaces already auto-fetched once, so an empty one cannot loop. */
   private autoFilled = new Set<Surface>();
+  /**
+   * Where the last refill's candidates went. An empty feed has several
+   * possible causes that look identical on screen — nothing fetched,
+   * everything classified as a video, everything already seen, everything
+   * blocked by the content filter — so the counts are kept and shown.
+   */
+  private lastFill = { fetched: 0, notMusic: 0, seen: 0, kept: 0 };
 
   private libraryList!: HTMLElement;
   private playlistList!: HTMLElement;
@@ -472,13 +479,30 @@ export class App {
     this.homeBody.appendChild(this.verticalList(items.slice(0, 20), this.emptyTextFor()));
     if (items.length === 0 && !this.refilling) {
       if (this.youtube.configured) {
-        const used = store.quotaUsed();
+        const f = this.lastFill;
         this.homeBody.appendChild(
           el(
             'p',
             'empty',
-            'API quota used today: ' +
-              used.toLocaleString() +
+            'Last fetch: ' +
+              f.fetched +
+              ' found, ' +
+              f.notMusic +
+              ' not music, ' +
+              f.seen +
+              ' already seen, ' +
+              this.youtube.lastHidden +
+              ' filtered, ' +
+              f.kept +
+              ' kept.',
+          ),
+        );
+        this.homeBody.appendChild(
+          el(
+            'p',
+            'empty',
+            'Quota today: ' +
+              store.quotaUsed().toLocaleString() +
               ' of ' +
               store.YOUTUBE_DAILY_QUOTA.toLocaleString(),
           ),
@@ -1695,11 +1719,20 @@ export class App {
       // A video about music is not music. Dropped here rather than given a
       // tab, so the Music feed stays recordings and the Shorts feed stays
       // Shorts. Logged, because a false negative silently loses real music.
-      const candidates = [...free, ...bought].filter((t) => {
+      const pool = [...free, ...bought];
+      const candidates = pool.filter((t) => {
         if ((t.kind ?? 'music') !== 'video') return true;
         console.info('not music:', t.title, '·', t.artist);
         return false;
       });
+
+      const excluded = new Set([...store.loadHistory(), ...this.hidden]);
+      this.lastFill = {
+        fetched: pool.length,
+        notMusic: pool.length - candidates.length,
+        seen: candidates.filter((t) => excluded.has(t.id)).length,
+        kept: 0,
+      };
 
       this.queue = buildQueue(candidates, this.model, {
         count: QUEUE_TARGET,
@@ -1709,6 +1742,8 @@ export class App {
         bucket: contextBucket(),
         fatigue: this.tagFatigue,
       });
+
+      this.lastFill.kept = this.queue.length;
 
       if (this.queue.length === 0) {
         this.setStatus(
