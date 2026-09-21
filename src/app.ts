@@ -117,6 +117,7 @@ export class App {
   private np!: HTMLElement;
   private npArt!: HTMLElement;
   private npArtImg!: HTMLElement;
+  private npBackdrop!: HTMLElement;
   private npTitle!: HTMLElement;
   private npArtist!: HTMLElement;
   private npWhy!: HTMLElement;
@@ -1151,6 +1152,12 @@ export class App {
     this.npArt = el('div', 'np-art');
     // Artwork lives in its own child, because paintArt() replaces textContent
     // and would otherwise wipe out the iframe mounted alongside it.
+    // Sits behind the player and fills the letterbox with a blurred, enlarged
+    // copy of the video's own thumbnail. Frames cannot be read out of a
+    // cross-origin player, and a thumbnail is cheaper to blur than video anyway.
+    this.npBackdrop = el('div', 'np-backdrop');
+    this.npArt.appendChild(this.npBackdrop);
+
     this.npArtImg = el('div', 'np-art-img');
     this.npArt.appendChild(this.npArtImg);
     // The YouTube iframe sits on top of the artwork when a YouTube track plays.
@@ -1215,6 +1222,12 @@ export class App {
 
     // Standing instruction, distinct from a dislike: a dislike teaches the
     // model, this removes the track from circulation entirely.
+    // In Shorts this belongs on the same row as the reactions, so the whole
+    // control strip is one line and the video keeps the height.
+    const hideIcon = button('np-ctl np-hide-icon', '⊘', "Don't show this again");
+    hideIcon.addEventListener('click', () => this.hideCurrent());
+    controls.appendChild(hideIcon);
+
     this.npAdd = button('np-hide', 'Add to playlist');
     this.npAdd.addEventListener('click', () => this.openPlaylistPicker());
     this.np.appendChild(this.npAdd);
@@ -1422,6 +1435,10 @@ export class App {
     this.npSource.textContent =
       this.sources.find((s) => s.id === track.sourceId)?.displayName ?? track.sourceId;
     paintArt(this.npArtImg, track.artworkUrl, track.title, '♪');
+    // Deliberately the small thumbnail: it is going to be blurred and scaled
+    // up, so the large one would cost bandwidth for detail nobody can see.
+    const backdrop = ytThumb(track.artworkUrl, 'mq');
+    this.npBackdrop.style.backgroundImage = backdrop ? 'url("' + backdrop + '")' : '';
 
     // A video source needs a 16:9 stage; artwork-only tracks keep the square.
     const kind = track.kind ?? 'video';
