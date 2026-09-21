@@ -72,8 +72,6 @@ const QUEUE_CAP = 120;
  * as anyone reaches for the one they just scrolled past.
  */
 const SHORTS_BACK_LIMIT = 5;
-/** Must match the rail width in the stylesheet. */
-const RAIL_WIDTH = 62;
 
 type TabName = 'home' | 'search' | 'library' | 'settings';
 
@@ -140,6 +138,13 @@ export class App {
   private searchChannels!: HTMLElement;
   /** Set while a channel's uploads are on screen; null for a normal search. */
   private channelPool: RankedTrack[] | null = null;
+  /**
+   * True while the queue belongs to one channel. The feed refills itself from
+   * trending and searches as it drains, which is right for the mixed feed and
+   * wrong here — it diluted a channel back to variety within a couple of
+   * tracks.
+   */
+  private channelLocked = false;
   private surfaceTabs = new Map<Surface, HTMLButtonElement>();
   private homeBody!: HTMLElement;
   private hidden: Set<TrackId> = store.loadHidden();
@@ -173,9 +178,6 @@ export class App {
       onProgress: (cur, dur) => this.renderProgress(cur, dur),
       onStateChange: (playing) => {
         this.renderPlayState(playing);
-        // The iframe is built during load, which happens after onTrackChange,
-        // so the first sizing pass can run before there is anything to size.
-        if (playing) this.sizeShortsStage();
         // Keyless playlists arrive as bare video ids, so the real title only
         // becomes available once the embedded player has loaded the video.
         if (playing) void this.captureYouTubeMetadata();
@@ -453,6 +455,8 @@ export class App {
     cell.appendChild(art);
     cell.appendChild(el('span', 'short-label', ranked.track.title));
     cell.addEventListener('click', () => {
+      // Back to the mixed feed.
+      this.channelLocked = false;
       const at = this.queue.indexOf(ranked);
       if (at >= 0) this.queue.splice(at, 1);
       void this.playTrack(ranked);
@@ -682,6 +686,8 @@ export class App {
     row.appendChild(main);
 
     row.addEventListener('click', () => {
+      // A pool means a closed set, which also means it must not be topped up.
+      this.channelLocked = pool !== undefined;
       if (pool) {
         // Everything after the one tapped, in the order the channel lists it.
         const at = pool.indexOf(ranked);
@@ -784,6 +790,7 @@ export class App {
   }
 
   private async playPlaylist(id: string): Promise<void> {
+    this.channelLocked = false;
     const playlist = store.loadPlaylists().find((pl) => pl.id === id);
     if (!playlist || playlist.tracks.length === 0) return;
 
@@ -1242,7 +1249,6 @@ export class App {
     this.np.appendChild(this.npStatus);
 
     this.attachShortsSwipe();
-    window.addEventListener('resize', () => this.sizeShortsStage());
 
     this.root.appendChild(this.np);
   }
@@ -1378,51 +1384,6 @@ export class App {
     this.np.appendChild(sheet);
   }
 
-  /**
-   * Sizes the player to the shape of the video it is showing.
-   *
-   * This is the difference between the chrome hugging the picture and the
-   * chrome spanning the screen. The player draws its title, share and logo at
-   * the edges of the iframe, not of the video — so an iframe stretched across
-   * the whole stage puts that furniture out in the black, far from the picture,
-   * covering everything. Sized to 9:16 it sits tight against the video, which
-   * is how Shorts looks on YouTube itself.
-   *
-   * Nothing is hidden or covered here; the player is simply given its correct
-   * dimensions instead of being stretched.
-   */
-  private sizeShortsStage(): void {
-    const host = this.ytHost;
-    if (!this.np.classList.contains('shorts')) {
-      host.style.width = '';
-      host.style.left = '';
-      host.style.right = '';
-      host.style.marginLeft = '';
-      return;
-    }
-
-    const height = this.npArt.clientHeight;
-    const stage = this.npArt.clientWidth;
-    if (!height || !stage) return;
-
-    // Leave room for a rail either side, so the player never grows under them.
-    const width = Math.min(Math.round((height * 9) / 16), stage - 2 * RAIL_WIDTH);
-    host.style.width = width + 'px';
-    host.style.left = '50%';
-    host.style.right = 'auto';
-    host.style.marginLeft = Math.round(-width / 2) + 'px';
-
-    // The IFrame API writes width and height attributes onto the iframe when
-    // it builds it. Those beat the stylesheet, so the element has to be told
-    // as well as its container, or it keeps spanning the whole stage and the
-    // player fills the sides with its own zoomed copy of the video.
-    const frame = host.querySelector('iframe');
-    if (frame) {
-      frame.setAttribute('width', String(width));
-      frame.setAttribute('height', String(height));
-    }
-  }
-
   private openNowPlaying(): void {
     this.np.classList.add('open');
   }
@@ -1452,10 +1413,6 @@ export class App {
     const kind = track.kind ?? 'video';
     this.np.classList.toggle('video', track.sourceId === 'youtube');
     this.np.classList.toggle('shorts', kind === 'short');
-    this.sizeShortsStage();
-    // Again after layout has settled: the class above changes the stage's
-    // height, and clientHeight read in the same tick is the old one.
-    window.setTimeout(() => this.sizeShortsStage(), 0);
     this.npAdd.hidden = kind === 'short';
 
     this.npLike.textContent = this.likes.has(track.id) ? '♥' : '♡';
@@ -1590,7 +1547,7 @@ export class App {
   async next(reason: 'skipped' | 'completed'): Promise<void> {
     if (reason === 'skipped') this.player.skip();
 
-    if (this.queue.length <= QUEUE_LOW_WATER) {
+    if (!this.channelLocked && this.queue.length <= QUEUE_LOW_WATER) {
       void this.refillQueue().then(() => this.renderHome());
     }
 
@@ -1607,10 +1564,14 @@ export class App {
     const nextUp = sameSurface[0] ?? this.queue.find((r) => !this.hidden.has(r.track.id));
     if (nextUp) this.queue.splice(this.queue.indexOf(nextUp), 1);
 
-    if (current === 'short') void this.ensureShorts();
+    if (current === 'short' && !this.channelLocked) void this.ensureShorts();
     this.renderHome();
 
     if (!nextUp) {
+      if (this.channelLocked) {
+        this.channelLocked = false;
+        this.setStatus('End of the channel');
+      }
       await this.refillQueue();
       this.renderHome();
       const retry = this.queue.shift();
@@ -1706,6 +1667,7 @@ export class App {
 
   /** Autoplay policy means the first playback must come from a user gesture. */
   async begin(): Promise<void> {
+    this.channelLocked = false;
     if (this.queue.length === 0) await this.refillQueue();
     const first = this.queue.shift();
     this.renderHome();
