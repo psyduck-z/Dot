@@ -158,6 +158,8 @@ export class App {
   private skipStreak = 0;
   /** True mid-drag on the scrubber, so progress updates do not fight it. */
   private seeking = false;
+  /** Surfaces already auto-fetched once, so an empty one cannot loop. */
+  private autoFilled = new Set<Surface>();
 
   private libraryList!: HTMLElement;
   private playlistList!: HTMLElement;
@@ -449,10 +451,11 @@ export class App {
             'p',
             'empty',
             this.shortsSearched
-              ? 'No Shorts found yet. They turn up as trending and your playlists refresh.'
+              ? 'No Shorts found yet.'
               : 'Looking for Shorts…',
           ),
         );
+        if (this.shortsSearched && !this.refilling) this.homeBody.appendChild(this.retryButton());
         return;
       }
       // A grid of portrait thumbnails; tapping one opens the vertical player.
@@ -469,6 +472,7 @@ export class App {
 
     this.homeBody.appendChild(el('h2', 'shelf-title', 'Made for you'));
     this.homeBody.appendChild(this.verticalList(items.slice(0, 20), this.emptyTextFor()));
+    if (items.length === 0 && !this.refilling) this.homeBody.appendChild(this.retryButton());
 
     const recent = store
       .loadRecent()
@@ -495,6 +499,17 @@ export class App {
     return this.refilling ? 'Finding music…' : 'Nothing here yet.';
   }
 
+  /** Shown with an empty surface, since the automatic attempt only runs once. */
+  private retryButton(): HTMLElement {
+    const retry = button('toggle', 'Try again');
+    retry.addEventListener('click', () => {
+      this.allowRefetch();
+      this.ensureSurface();
+      this.renderHome();
+    });
+    return retry;
+  }
+
   /**
    * Fetches when a surface has nothing to show.
    *
@@ -503,13 +518,27 @@ export class App {
    */
   private ensureSurface(): void {
     if (this.refilling) return;
+    // Once per surface, and no more.
+    //
+    // This is called from renderHome when a surface is empty, and it finishes
+    // by rendering again — so without a latch, a surface that stays empty
+    // fetches, renders, finds itself still empty, and fetches again forever.
+    // On Shorts each pass also spends a hundred quota units. The latch is
+    // released by anything that could change the answer: new tags, a new key,
+    // or the retry button.
+    if (this.autoFilled.has(this.surface)) return;
+    this.autoFilled.add(this.surface);
+
     if (this.surface === 'short') {
       void this.ensureShorts();
       return;
     }
-    if (this.queueFor('music').length === 0) {
-      void this.refillQueue().then(() => this.renderHome());
-    }
+    void this.refillQueue().then(() => this.renderHome());
+  }
+
+  /** Lets the empty surfaces try again — after new tags, a key, or a retry. */
+  private allowRefetch(): void {
+    this.autoFilled.clear();
   }
 
   private shortCell(ranked: RankedTrack): HTMLElement {
@@ -996,7 +1025,10 @@ export class App {
       void this.youtube.verifyKey().then((problem) => {
         keyState.textContent = problem ?? 'Connected — search is on';
         // Re-pull the feed so YouTube results appear without a reload.
-        if (!problem) void this.refillQueue().then(() => this.renderHome());
+        if (!problem) {
+          this.allowRefetch();
+          void this.refillQueue().then(() => this.renderHome());
+        }
       });
     });
     host.appendChild(keyField);
@@ -1107,6 +1139,7 @@ export class App {
           store.saveModel(this.model);
         }
         store.savePrefs(this.prefs);
+        this.allowRefetch();
         void this.refillQueue().then(() => this.renderHome());
       });
       grid.appendChild(chip);
