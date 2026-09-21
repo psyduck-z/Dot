@@ -88,6 +88,8 @@ const AMBIENT_DELAY_MS = 25000;
 const DOUBLE_TAP_MS = 350;
 /** The dimmest the window can go without being off. */
 const DIM_FLOOR = 0.01;
+/** The only sections long enough to be worth hiding. */
+const COLLAPSIBLE_SECTIONS = ['Music tags', 'Shorts topics'];
 
 /** Injected by the Android shell. Absent in a browser. */
 declare global {
@@ -429,13 +431,23 @@ export class App {
     for (const node of nodes) {
       const isHeading = node.tagName === 'H2' && node.classList.contains('shelf-title');
       if (!isHeading) {
-        // Anything before the first heading — the screen title — stays put.
         if (body) body.appendChild(node);
         continue;
       }
 
+      // Only the tag pickers fold away. They are seventy-odd chips between
+      // them and dwarf everything else on the screen; a toggle or a slider is
+      // one row and is worse hidden behind a tap.
+      const title = (node.textContent ?? '').trim();
+      if (COLLAPSIBLE_SECTIONS.indexOf(title) < 0) {
+        body = null;
+        continue;
+      }
+
       const toggle = button('section-toggle');
-      toggle.textContent = node.textContent ?? '';
+      toggle.appendChild(el('span', 'section-name', title));
+      toggle.appendChild(el('span', 'section-mark', '+'));
+
       const panel = el('div', 'section-body');
       panel.hidden = true;
 
@@ -446,6 +458,8 @@ export class App {
       toggle.addEventListener('click', () => {
         panel.hidden = !panel.hidden;
         toggle.classList.toggle('open', !panel.hidden);
+        const mark = toggle.querySelector('.section-mark');
+        if (mark) mark.textContent = panel.hidden ? '+' : '−';
       });
       body = panel;
     }
@@ -459,9 +473,12 @@ export class App {
     for (const [key, pane] of this.panes) pane.hidden = key !== name;
     for (const [key, tab] of this.tabs) tab.classList.toggle('on', key === name);
     if (name === 'library') this.renderLibrary();
-    // Stats are read from storage, so they would otherwise show whatever was
-    // true when the shell was first built.
-    if (name === 'settings') this.renderStats();
+    // Both are read at build time, and Settings is built once — so without
+    // this they keep showing whatever was true the first time it was opened.
+    if (name === 'settings') {
+      this.renderStats();
+      this.paintTiming();
+    }
   }
 
   /* ---------------------------------------------------------------------- home */
