@@ -1152,9 +1152,8 @@ export class App {
     this.npArt = el('div', 'np-art');
     // Artwork lives in its own child, because paintArt() replaces textContent
     // and would otherwise wipe out the iframe mounted alongside it.
-    // Sits behind the player and fills the letterbox with a blurred, enlarged
-    // copy of the video's own thumbnail. Frames cannot be read out of a
-    // cross-origin player, and a thumbnail is cheaper to blur than video anyway.
+    // Lights the letterbox either side of a vertical video. Purely a gradient,
+    // so it costs no request and no filter.
     this.npBackdrop = el('div', 'np-backdrop');
     this.npArt.appendChild(this.npBackdrop);
 
@@ -1435,10 +1434,6 @@ export class App {
     this.npSource.textContent =
       this.sources.find((s) => s.id === track.sourceId)?.displayName ?? track.sourceId;
     paintArt(this.npArtImg, track.artworkUrl, track.title, '♪');
-    // Deliberately the small thumbnail: it is going to be blurred and scaled
-    // up, so the large one would cost bandwidth for detail nobody can see.
-    const backdrop = ytThumb(track.artworkUrl, 'mq');
-    this.npBackdrop.style.backgroundImage = backdrop ? 'url("' + backdrop + '")' : '';
 
     // A video source needs a 16:9 stage; artwork-only tracks keep the square.
     const kind = track.kind ?? 'video';

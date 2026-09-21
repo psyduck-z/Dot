@@ -624,13 +624,13 @@ body {
 /* YouTube's terms require the embedded player to remain visible, so it is
    mounted over the artwork rather than hidden. This is also why there is no
    background audio on the YouTube path. */
-/* Fills the letterbox with a blurred, enlarged copy of the video's own
-   thumbnail, so the black columns become part of the picture rather than dead
-   space. Blurring a 320px thumbnail is far cheaper than blurring anything
-   large, which matters on watch hardware.
+/* The letterbox either side of a vertical video. Black at the outer edges,
+   lifting to a soft white where it meets the picture, so the columns read as
+   light spilling off the video rather than as dead space.
 
-   Static: movement behind a moving video competed with it, and cost frames
-   on hardware that has none spare. */
+   One element spanning the stage with a single horizontal gradient: the
+   player covers the middle, so only the two flanks are ever seen. No image to
+   fetch and no blur filter to run, which is the cheapest this can be. */
 .np-backdrop { display: none; }
 .np.shorts .np-backdrop {
   display: block;
@@ -640,11 +640,15 @@ body {
   right: 0;
   bottom: 0;
   z-index: 1;
-  background-size: cover;
-  background-position: center;
-  filter: blur(26px) saturate(1.5);
-  opacity: 0.6;
-  transform: scale(1.3);
+  background: linear-gradient(
+    to right,
+    #000 0%,
+    rgba(255, 255, 255, 0.03) 26%,
+    rgba(255, 255, 255, 0.13) 46%,
+    rgba(255, 255, 255, 0.13) 54%,
+    rgba(255, 255, 255, 0.03) 74%,
+    #000 100%
+  );
   pointer-events: none;
 }
 
