@@ -1,5 +1,5 @@
 {
-  "version": "0f71e77",
+  "version": "c84afee",
   "bundle": "bundle.js",
-  "notes": "Fill the loading wait with escalating time captions"
+  "notes": "Stop the loading lines squashing Shorts, and make the caption a card"
 }
