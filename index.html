@@ -641,15 +641,15 @@ body {
    very top and bottom of this column belong to the player. Running to the
    corners would sit on top of them.
 
-   18% to 84% clears both bands and still covers two thirds of the height,
-   which is enough to keep a pointer off the video and stop the player's own
-   overlay appearing. */
+   Full height is safe now: the player is sized to the video's own 9:16 shape
+   rather than stretched across the stage, so this column is background rather
+   than the edge of the iframe. Nothing here is on top of the player. */
 .np-rail { display: none; }
 .np.shorts .np-rail {
   display: block;
   position: absolute;
-  top: 18%;
-  height: 66%;
+  top: 0;
+  bottom: 0;
   width: 62px;
   z-index: 4;
   padding: 0;

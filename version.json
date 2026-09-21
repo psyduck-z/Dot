@@ -1,5 +1,5 @@
 {
-  "version": "dddce6a",
+  "version": "4e77cc0",
   "bundle": "bundle.js",
-  "notes": "Remove the lower Shorts rails"
+  "notes": "Size the Shorts player to the video instead of stretching it"
 }
