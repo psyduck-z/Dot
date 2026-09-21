@@ -1,5 +1,5 @@
 {
-  "version": "a694b5f",
+  "version": "df75759",
   "bundle": "bundle.js",
-  "notes": "Remove dead code and legacy CSS prefixes"
+  "notes": "Shorts: loop instead of advancing, drop the transport buttons"
 }
