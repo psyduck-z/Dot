@@ -139,6 +139,8 @@ const WRITE_DELAY_MS = 4000;
 let pendingModel: TasteModel | null = null;
 let pendingEvents: PlayEvent[] | null = null;
 let writeTimer: ReturnType<typeof setTimeout> | null = null;
+let historyDirty = false;
+let recentDirty = false;
 
 function scheduleFlush(): void {
   if (writeTimer) return;
@@ -161,6 +163,14 @@ export function appendEventSoon(event: PlayEvent): void {
 }
 
 export function flushWrites(): void {
+  if (historyDirty && historyCache) {
+    write(KEY.history, historyCache);
+    historyDirty = false;
+  }
+  if (recentDirty && recentCache) {
+    write(KEY.recent, recentCache);
+    recentDirty = false;
+  }
   if (pendingModel) {
     write(KEY.model, pendingModel.toJSON());
     pendingModel = null;
@@ -180,6 +190,7 @@ export function flushWrites(): void {
  */
 let prefsCache: Prefs | null = null;
 let historyCache: TrackId[] | null = null;
+let recentCache: Track[] | null = null;
 
 export function loadPrefs(): Prefs {
   if (prefsCache) return prefsCache;
@@ -235,10 +246,10 @@ export function loadHistory(): TrackId[] {
 export function pushHistory(id: TrackId): TrackId[] {
   const history = loadHistory().filter((h) => h !== id);
   history.push(id);
-  const trimmed = history.length > MAX_HISTORY ? history.slice(-MAX_HISTORY) : history;
-  historyCache = trimmed;
-  write(KEY.history, trimmed);
-  return trimmed;
+  historyCache = history.length > MAX_HISTORY ? history.slice(-MAX_HISTORY) : history;
+  historyDirty = true;
+  scheduleFlush();
+  return historyCache;
 }
 
 /**
@@ -246,15 +257,23 @@ export function pushHistory(id: TrackId): TrackId[] {
  * Home screen can render instantly and offline without hitting any API.
  */
 export function loadRecent(): Track[] {
-  return read<Track[]>(KEY.recent, []);
+  if (!recentCache) recentCache = read<Track[]>(KEY.recent, []);
+  return recentCache;
 }
 
+/**
+ * Both of these are on the path between tapping a track and hearing it, and
+ * both rewrite their whole list. Kept in memory so everything that reads them
+ * is correct immediately, and written with the other deferred work — a play
+ * should not wait on storage to record that it happened.
+ */
 export function pushRecent(track: Track): Track[] {
   const recent = loadRecent().filter((t) => t.id !== track.id);
   recent.unshift(track);
-  const trimmed = recent.slice(0, MAX_RECENT);
-  write(KEY.recent, trimmed);
-  return trimmed;
+  recentCache = recent.slice(0, MAX_RECENT);
+  recentDirty = true;
+  scheduleFlush();
+  return recentCache;
 }
 
 /** Liked tracks in full, for the Library screen. */
@@ -435,6 +454,9 @@ export function cacheSet<T>(key: string, value: T): void {
 export function clearAll(): void {
   prefsCache = null;
   historyCache = null;
+  recentCache = null;
+  historyDirty = false;
+  recentDirty = false;
   pendingModel = null;
   pendingEvents = null;
   for (const key of Object.values(KEY)) {

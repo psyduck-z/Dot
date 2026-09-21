@@ -386,7 +386,47 @@ export class App {
     if (name === 'home') this.buildHome(host);
     else if (name === 'search') this.buildSearch(host);
     else if (name === 'library') this.buildLibrary(host);
-    else if (name === 'settings') this.buildSettings(host);
+    else if (name === 'settings') {
+      this.buildSettings(host);
+      this.collapseSections(host);
+    }
+  }
+
+  /**
+   * Turns each heading in Settings into a collapsed section.
+   *
+   * Done as a pass over the finished screen rather than by restructuring every
+   * builder: the headings already mark where one concern ends and the next
+   * begins, so the grouping is there to be read rather than needing to be
+   * declared again in eight places.
+   */
+  private collapseSections(host: HTMLElement): void {
+    const nodes = Array.from(host.children) as HTMLElement[];
+    let body: HTMLElement | null = null;
+
+    for (const node of nodes) {
+      const isHeading = node.tagName === 'H2' && node.classList.contains('shelf-title');
+      if (!isHeading) {
+        // Anything before the first heading — the screen title — stays put.
+        if (body) body.appendChild(node);
+        continue;
+      }
+
+      const toggle = button('section-toggle');
+      toggle.textContent = node.textContent ?? '';
+      const panel = el('div', 'section-body');
+      panel.hidden = true;
+
+      host.insertBefore(toggle, node);
+      host.insertBefore(panel, node);
+      host.removeChild(node);
+
+      toggle.addEventListener('click', () => {
+        panel.hidden = !panel.hidden;
+        toggle.classList.toggle('open', !panel.hidden);
+      });
+      body = panel;
+    }
   }
 
   private show(name: TabName): void {
@@ -2049,13 +2089,19 @@ export class App {
       return;
     }
 
+    // Start the player first. None of the bookkeeping below affects what is
+    // about to be loaded, and doing it first put storage work between the tap
+    // and the sound.
+    const started = this.player.play(ranked.track, url);
+
     store.pushHistory(ranked.track.id);
     store.pushRecent(ranked.track);
     for (const tag of ranked.track.tags) {
       const key = tag.toLowerCase().trim();
       if (key) this.tagFatigue.set(key, (this.tagFatigue.get(key) ?? 0) + 1);
     }
-    await this.player.play(ranked.track, url);
+
+    await started;
     this.renderHome();
   }
 
