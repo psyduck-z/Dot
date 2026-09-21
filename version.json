@@ -1,5 +1,5 @@
 {
-  "version": "7126369",
+  "version": "49932d6",
   "bundle": "bundle.js",
-  "notes": "Drop the backdrop drift and tighten the Shorts bottom strip"
+  "notes": "Light the Shorts letterbox with a gradient instead of a blur"
 }
