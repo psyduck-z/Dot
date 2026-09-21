@@ -1,5 +1,5 @@
 {
-  "version": "43b90bc",
+  "version": "56944a1",
   "bundle": "bundle.js",
-  "notes": "Refresh the timing on every visit, and only collapse the tag pickers"
+  "notes": "Remove the manual revert from Updates"
 }
