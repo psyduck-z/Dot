@@ -1,5 +1,0 @@
-{
-  "version": "f452f28",
-  "bundle": "bundle.js",
-  "notes": "Fix version.json generation in CI"
-}
