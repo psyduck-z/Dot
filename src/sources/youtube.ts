@@ -356,8 +356,16 @@ export class YouTubeSource implements MusicSource {
    * and non-music, using YouTube's own madeForKids flag where it exists.
    */
   private playable(track: Track): boolean {
-    // Anything over ~15 minutes in a music feed is a mix or a full album upload.
-    return track.duration > 0 && track.duration < 900;
+    if (track.duration <= 0) return false;
+    if (track.kind === 'short') return track.duration <= 180;
+
+    // Mixes and full albums used to be excluded here for being too long. That
+    // was the right call when starting a track was free; it costs about seven
+    // seconds, all of it inside the player, so a long upload is now worth more
+    // than a short one — an hour-long mix pays that once instead of twenty
+    // times. Three hours is the ceiling only to keep out things that are not
+    // music at all.
+    return track.duration < 3 * 60 * 60;
   }
 
   /**

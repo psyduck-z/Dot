@@ -1139,7 +1139,9 @@ export class App {
     this.buildTagPicker(
       host,
       'Music tags',
-      'Genres the Music feed is built from.',
+      'Genres the Music feed is built from. Long mixes are included: each '
+        + 'track start costs a few seconds inside the player, so one long '
+        + 'upload interrupts far less than twenty short ones.',
       this.prefs.musicTags,
       SEED_TAGS,
     );

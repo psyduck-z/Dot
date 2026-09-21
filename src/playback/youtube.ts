@@ -34,7 +34,8 @@ const POLL_MINIMAL_MS = 2000;
 
 /* The IFrame API defines a global; these are the parts we use. */
 interface YtPlayer {
-  loadVideoById(id: string): void;
+  loadVideoById(options: { videoId: string; suggestedQuality?: string }): void;
+  setPlaybackQuality(quality: string): void;
   unloadModule(name: string): void;
   loadModule(name: string): void;
   setOption(module: string, option: string, value: unknown): void;
@@ -63,6 +64,30 @@ declare global {
 }
 
 let apiPromise: Promise<YtNamespace> | null = null;
+
+/**
+ * Nudges the radio and the TLS session awake just before a load.
+ *
+ * Between tracks a watch's modem drops to a low-power state and idle
+ * connections are dropped, so each track pays for waking the radio and
+ * re-handshaking before it can even ask for the video. The static preconnect
+ * hints in the page only cover the first load; re-inserting them puts the
+ * browser back to work on the same hosts while the player is still starting.
+ */
+function warmConnections(): void {
+  const hosts = ['https://www.youtube.com', 'https://i.ytimg.com', 'https://googlevideo.com'];
+  for (const host of hosts) {
+    const existing = document.head.querySelector('link[data-dot-warm="' + host + '"]');
+    if (existing) existing.parentNode?.removeChild(existing);
+
+    const link = document.createElement('link');
+    link.rel = 'preconnect';
+    link.href = host;
+    link.crossOrigin = '';
+    link.setAttribute('data-dot-warm', host);
+    document.head.appendChild(link);
+  }
+}
 
 /** Loads the IFrame API once per page and resolves when the global is ready. */
 function loadIframeApi(): Promise<YtNamespace> {
@@ -306,7 +331,19 @@ export class YouTubeEngine implements PlaybackEngine {
     this.knownDuration = 0;
     this.host.hidden = false;
     const player = await this.ensurePlayer();
-    player.loadVideoById(handle);
+    warmConnections();
+
+    // A watch screen is a couple of hundred pixels wide and most of this is
+    // listened to rather than watched, so the largest stream the player would
+    // otherwise pick is wasted — and the initial buffer it has to fill before
+    // any sound is proportional to it. Asking for the smallest is a request
+    // rather than a guarantee; the player may still choose otherwise.
+    player.loadVideoById({ videoId: handle, suggestedQuality: 'small' });
+    try {
+      player.setPlaybackQuality('small');
+    } catch {
+      /* older players ignore this */
+    }
     // Each video brings its own caption track, so this has to run per load.
     this.silenceCaptions();
   }
