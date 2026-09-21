@@ -1,5 +1,5 @@
 {
-  "version": "067b455",
+  "version": "7126369",
   "bundle": "bundle.js",
-  "notes": "Blurred backdrop behind Shorts, and one row of controls"
+  "notes": "Drop the backdrop drift and tighten the Shorts bottom strip"
 }
