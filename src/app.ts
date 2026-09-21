@@ -173,6 +173,9 @@ export class App {
       onProgress: (cur, dur) => this.renderProgress(cur, dur),
       onStateChange: (playing) => {
         this.renderPlayState(playing);
+        // The iframe is built during load, which happens after onTrackChange,
+        // so the first sizing pass can run before there is anything to size.
+        if (playing) this.sizeShortsStage();
         // Keyless playlists arrive as bare video ids, so the real title only
         // becomes available once the embedded player has loaded the video.
         if (playing) void this.captureYouTubeMetadata();
@@ -1408,6 +1411,16 @@ export class App {
     host.style.left = '50%';
     host.style.right = 'auto';
     host.style.marginLeft = Math.round(-width / 2) + 'px';
+
+    // The IFrame API writes width and height attributes onto the iframe when
+    // it builds it. Those beat the stylesheet, so the element has to be told
+    // as well as its container, or it keeps spanning the whole stage and the
+    // player fills the sides with its own zoomed copy of the video.
+    const frame = host.querySelector('iframe');
+    if (frame) {
+      frame.setAttribute('width', String(width));
+      frame.setAttribute('height', String(height));
+    }
   }
 
   private openNowPlaying(): void {
@@ -1440,6 +1453,9 @@ export class App {
     this.np.classList.toggle('video', track.sourceId === 'youtube');
     this.np.classList.toggle('shorts', kind === 'short');
     this.sizeShortsStage();
+    // Again after layout has settled: the class above changes the stage's
+    // height, and clientHeight read in the same tick is the old one.
+    window.setTimeout(() => this.sizeShortsStage(), 0);
     this.npAdd.hidden = kind === 'short';
 
     this.npLike.textContent = this.likes.has(track.id) ? '♥' : '♡';
