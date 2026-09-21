@@ -84,11 +84,15 @@ const FAMILIAR_PER_REFILL = 2;
 const FAMILIAR_COOLDOWN = 60;
 /** Idle time before the player screen goes dark around the video. */
 const AMBIENT_DELAY_MS = 25000;
+/** Two taps closer together than this count as one double-tap. */
+const DOUBLE_TAP_MS = 350;
+/** The dimmest the window can go without being off. */
+const DIM_FLOOR = 0.01;
 
 /** Injected by the Android shell. Absent in a browser. */
 declare global {
   interface Window {
-    DotNative?: { setKeepAwake(on: boolean): void };
+    DotNative?: { setKeepAwake(on: boolean): void; setBrightness(level: number): void };
   }
 }
 
@@ -184,6 +188,9 @@ export class App {
   /** Whether the shell is currently being asked to keep the screen on. */
   private keepingAwake = false;
   private ambientTimer = 0;
+  /** True while the double-tap has taken the screen down to its floor. */
+  private dimmed = false;
+  private lastTapAt = 0;
   /** Surfaces already auto-fetched once, so an empty one cannot loop. */
   private autoFilled = new Set<Surface>();
   /**
@@ -1077,6 +1084,44 @@ export class App {
     }
     host.appendChild(segment);
 
+    host.appendChild(el('h2', 'shelf-title', 'Screen'));
+    host.appendChild(
+      el(
+        'p',
+        'muted',
+        'Brightness while Dot is open. Double-tap the player to drop to the ' +
+          'dimmest, and again to come back here. Leave at System to leave it alone.',
+      ),
+    );
+
+    const brightness = el('input', 'slider');
+    brightness.type = 'range';
+    brightness.id = 'dot-brightness';
+    brightness.min = '0';
+    brightness.max = '100';
+    brightness.step = '5';
+    // 0 on the slider means "hand it back to the system".
+    brightness.value = String(
+      this.prefs.screenBrightness < 0 ? 0 : Math.round(this.prefs.screenBrightness * 100),
+    );
+
+    const brightnessRead = el('p', 'readout', '');
+    const paintBrightness = (): void => {
+      brightnessRead.textContent =
+        this.prefs.screenBrightness < 0 ? 'System' : Math.round(this.prefs.screenBrightness * 100) + '%';
+    };
+    paintBrightness();
+    brightness.addEventListener('input', () => {
+      const pct = Number(brightness.value);
+      this.prefs.screenBrightness = pct === 0 ? -1 : pct / 100;
+      store.savePrefs(this.prefs);
+      this.dimmed = false;
+      this.applyBrightness();
+      paintBrightness();
+    });
+    host.appendChild(brightness);
+    host.appendChild(brightnessRead);
+
     const awakeToggle = button('toggle');
     const paintAwake = (): void => {
       awakeToggle.textContent = this.prefs.keepScreenOn
@@ -1476,6 +1521,8 @@ export class App {
     this.np.appendChild(this.npStatus);
 
     this.attachShortsSwipe();
+    this.attachDimTap();
+    this.applyBrightness();
     this.np.addEventListener('touchstart', () => this.scheduleAmbient(), { passive: true });
     this.np.addEventListener('click', () => this.scheduleAmbient());
 
@@ -1718,6 +1765,44 @@ export class App {
     this.ambientTimer = window.setTimeout(() => {
       if (this.player.playing) this.np.classList.add('ambient');
     }, AMBIENT_DELAY_MS);
+  }
+
+  /** Pushes the current brightness to the shell. Harmless in a browser. */
+  private applyBrightness(): void {
+    const level = this.dimmed ? DIM_FLOOR : this.prefs.screenBrightness;
+    try {
+      window.DotNative?.setBrightness(level);
+    } catch {
+      /* not running in the shell */
+    }
+  }
+
+  /**
+   * Double-tap anywhere that is not a control to drop the screen to its
+   * dimmest, and again to come back to the remembered level.
+   *
+   * Bound to the overlay's own surfaces rather than the video: a tap starting
+   * on the player goes to the player, not here, which is also why it is the
+   * panels either side that respond.
+   */
+  private attachDimTap(): void {
+    const onTap = (target: EventTarget | null): void => {
+      // A double-tap on a rail or a reaction is two presses of that control.
+      if (target instanceof HTMLElement && target.closest('button')) return;
+
+      const now = Date.now();
+      if (now - this.lastTapAt < DOUBLE_TAP_MS) {
+        this.lastTapAt = 0;
+        this.dimmed = !this.dimmed;
+        this.applyBrightness();
+        this.setStatus(this.dimmed ? 'Screen dimmed' : 'Brightness restored');
+        return;
+      }
+      this.lastTapAt = now;
+    };
+
+    this.np.addEventListener('touchend', (e: TouchEvent) => onTap(e.target), { passive: true });
+    this.np.addEventListener('click', (e: MouseEvent) => onTap(e.target));
   }
 
   private openNowPlaying(): void {

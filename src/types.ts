@@ -146,6 +146,11 @@ export interface Prefs {
    * is most of the battery, so it is a choice rather than a default.
    */
   keepScreenOn: boolean;
+  /**
+   * Screen brightness while Dot is open, 0..1. Negative means leave it to the
+   * system. Remembered so a double-tap has something to come back to.
+   */
+  screenBrightness: number;
 }
 
 
@@ -158,4 +163,5 @@ export const DEFAULT_PREFS: Prefs = {
   filterLevel: 'normal',
   captionsEnabled: false,
   keepScreenOn: true,
+  screenBrightness: -1,
 };

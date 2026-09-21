@@ -117,6 +117,28 @@ class MainActivity : Activity() {
      * the difference between this and a background-playback feature.
      */
     inner class DotBridge {
+        /**
+         * Brightness for this window only.
+         *
+         * Deliberately the window attribute rather than the system setting:
+         * it needs no permission, it does not change the watch's brightness
+         * for anything else, and it reverts the moment the app is left.
+         * `level` below zero hands control back to the system.
+         */
+        @JavascriptInterface
+        fun setBrightness(level: Float) {
+            runOnUiThread {
+                val attrs = window.attributes
+                attrs.screenBrightness =
+                    if (level < 0f) {
+                        WindowManager.LayoutParams.BRIGHTNESS_OVERRIDE_NONE
+                    } else {
+                        level.coerceIn(0.01f, 1f)
+                    }
+                window.attributes = attrs
+            }
+        }
+
         @JavascriptInterface
         fun setKeepAwake(on: Boolean) {
             runOnUiThread {
