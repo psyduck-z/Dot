@@ -135,6 +135,8 @@ export class App {
   private searchScope: 'all' | Surface = 'all';
   private searchResults: RankedTrack[] = [];
   private searchChannels!: HTMLElement;
+  /** Set while a channel's uploads are on screen; null for a normal search. */
+  private channelPool: RankedTrack[] | null = null;
   private surfaceTabs = new Map<Surface, HTMLButtonElement>();
   private homeBody!: HTMLElement;
   private hidden: Set<TrackId> = store.loadHidden();
@@ -530,6 +532,7 @@ export class App {
     // A leading @ means a channel. Listing a channel's own uploads costs three
     // quota units where searching costs a hundred, and returns the channel's
     // full catalogue in order rather than whatever a search surfaces.
+    this.channelPool = null;
     const handle = query.trim();
     const found = handle.startsWith('@')
       ? await this.youtube.channelUploads(handle, 50)
@@ -625,6 +628,7 @@ export class App {
     this.searchResults = tracks
       .filter((track) => !this.hidden.has(track.id))
       .map((track) => ({ track, score: this.model.score(featurize(track, bucket)), explored: false }));
+    this.channelPool = this.searchResults;
     this.paintSearchResults(results);
   }
 
@@ -640,6 +644,9 @@ export class App {
       this.searchScope === 'all'
         ? this.searchResults
         : this.searchResults.filter((r) => (r.track.kind ?? 'music') === this.searchScope);
+    // Only a channel view constrains what plays next. A normal search feeds
+    // back into the mixed queue, which is what keeps Shorts varied.
+    const pool = this.channelPool ? shown : undefined;
 
     if (shown.length === 0) {
       results.appendChild(
@@ -647,10 +654,15 @@ export class App {
       );
       return;
     }
-    for (const item of shown) results.appendChild(this.row(item));
+    for (const item of shown) results.appendChild(this.row(item, pool));
   }
 
-  private row(ranked: RankedTrack): HTMLElement {
+  /**
+   * `pool` is what should follow this track. Passed when the list being shown
+   * is a closed set — one channel's uploads — so playing from it keeps the
+   * feed inside that set instead of falling back to the mixed queue.
+   */
+  private row(ranked: RankedTrack, pool?: RankedTrack[]): HTMLElement {
     const row = button('row');
 
     const art = el('div', 'row-art');
@@ -664,6 +676,11 @@ export class App {
     row.appendChild(main);
 
     row.addEventListener('click', () => {
+      if (pool) {
+        // Everything after the one tapped, in the order the channel lists it.
+        const at = pool.indexOf(ranked);
+        this.queue = at >= 0 ? pool.slice(at + 1) : pool.filter((r) => r !== ranked);
+      }
       void this.playTrack(ranked);
       this.openNowPlaying();
     });
