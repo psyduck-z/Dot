@@ -1,5 +1,5 @@
 {
-  "version": "4761546",
+  "version": "e1d0e49",
   "bundle": "bundle.js",
-  "notes": "Cut startup work: build screens on demand, store the model as bytes"
+  "notes": "Shrink what is stored and stop reading it during startup"
 }
