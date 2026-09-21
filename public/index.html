@@ -900,11 +900,34 @@ body {
 .np.shorts .np-controls {
   -webkit-flex: 0 0 auto;
   flex: 0 0 auto;
-  margin: 8px 16px 0;
+  margin: 6px 16px 0;
 }
-.np.shorts .np-ctl { width: 44px; height: 44px; font-size: 17px; }
-.np.shorts .np-main { width: 52px; height: 52px; }
-.np.shorts .np-hide { margin: 6px 16px 0; }
+.np.shorts .np-ctl { width: 42px; height: 42px; font-size: 16px; }
+.np.shorts .np-main { width: 48px; height: 48px; font-size: 17px; }
+
+/* Everything that is not the video or a control gives up its height. The
+   header keeps only the close affordance, and the text actions collapse from
+   full-width blocks into one short inline row.
+
+   Deliberately still above the video rather than floating over it: the player
+   draws its own title, share and logo, and covering those is not something
+   this app does. */
+.np.shorts .np-head {
+  -webkit-flex: 0 0 auto;
+  flex: 0 0 auto;
+  margin: 0 8px;
+  min-height: 32px;
+}
+.np.shorts .np-icon { width: 32px; height: 32px; font-size: 17px; }
+.np.shorts .np-source { display: none; }
+
+.np.shorts .np-hide {
+  display: inline-block;
+  width: auto;
+  margin: 4px 6px 0;
+  padding: 3px 6px;
+  font-size: 11px;
+}
 
 /* A standing instruction deserves less visual weight than a reaction. */
 .np-hide {

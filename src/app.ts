@@ -87,6 +87,8 @@ export class App {
 
   private queue: RankedTrack[] = [];
   private currentRanked: RankedTrack | null = null;
+  /** Shorts already watched, so a downward swipe can go back to them. */
+  private shortsBack: RankedTrack[] = [];
   private refilling = false;
 
   private tabs = new Map<TabName, HTMLButtonElement>();
@@ -1064,8 +1066,10 @@ export class App {
         if (!tracking || !this.np.classList.contains('shorts')) return;
         tracking = false;
         const endY = e.changedTouches[0]?.clientY ?? startY;
+        const travel = startY - endY;
         // Require a deliberate swipe; a tap or a nudge should do nothing.
-        if (startY - endY > 60) void this.next('skipped');
+        if (travel > 60) void this.next('skipped');
+        else if (travel < -60) void this.previousShort();
       },
       { passive: true },
     );
@@ -1076,8 +1080,26 @@ export class App {
       if (e.deltaY > 40) {
         e.preventDefault();
         void this.next('skipped');
+      } else if (e.deltaY < -40) {
+        e.preventDefault();
+        void this.previousShort();
       }
     });
+  }
+
+  /**
+   * Goes back to the Short before this one. The current track is pushed to the
+   * front of the queue rather than dropped, so swiping back up returns to it
+   * instead of skipping past.
+   */
+  private async previousShort(): Promise<void> {
+    const previous = this.shortsBack.pop();
+    if (!previous) {
+      this.setStatus('Nothing before this');
+      return;
+    }
+    if (this.currentRanked) this.queue.unshift(this.currentRanked);
+    await this.playTrack(previous);
   }
 
   /** Removes a track from circulation for good. */
@@ -1328,6 +1350,12 @@ export class App {
 
     // Advance within the surface being watched: a Short should not be followed
     // by a six-minute video just because it was next in the pool.
+    // Only Shorts keep a back stack; the music feed has a queue you can see.
+    if (this.currentRanked?.track.kind === 'short') {
+      this.shortsBack.push(this.currentRanked);
+      if (this.shortsBack.length > 30) this.shortsBack.shift();
+    }
+
     const current: Surface = this.player.track?.kind === 'short' ? 'short' : 'music';
     const sameSurface = this.queueFor(current);
     const nextUp = sameSurface[0] ?? this.queue.find((r) => !this.hidden.has(r.track.id));
