@@ -624,6 +624,32 @@ body {
   z-index: 2;
   background: #000;
 }
+/* Back and forward, living in the letterbox either side of a vertical Short.
+   Deliberately only the middle band of the height: the player draws its title
+   across the top of the iframe and its logo at the bottom, and these must not
+   land on either. */
+.np-rail { display: none; }
+.np.shorts .np-rail {
+  display: block;
+  position: absolute;
+  top: 28%;
+  height: 44%;
+  width: 58px;
+  z-index: 4;
+  padding: 0;
+  border: 0;
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.06);
+  color: rgba(255, 255, 255, 0.6);
+  font-family: inherit;
+  font-size: 24px;
+  line-height: 1;
+  cursor: pointer;
+}
+.np.shorts .np-rail:active { background: rgba(255, 255, 255, 0.16); }
+.np.shorts .np-rail-prev { left: 2px; }
+.np.shorts .np-rail-next { right: 2px; }
+
 .yt-host iframe {
   display: block;
   width: 100%;

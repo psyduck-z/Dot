@@ -977,6 +977,18 @@ export class App {
     this.npArt.appendChild(this.npArtImg);
     // The YouTube iframe sits on top of the artwork when a YouTube track plays.
     this.npArt.appendChild(this.ytHost);
+
+    // A vertical Short is height-constrained in this stage, so it leaves a
+    // column of dead black down each side. These sit in that column: somewhere
+    // to press, and somewhere a swipe can start, without taking a pixel from
+    // the picture.
+    const prevRail = button('np-rail np-rail-prev', '‹', 'Previous short');
+    prevRail.addEventListener('click', () => void this.previousShort());
+    this.npArt.appendChild(prevRail);
+
+    const nextRail = button('np-rail np-rail-next', '›', 'Next short');
+    nextRail.addEventListener('click', () => void this.next('skipped'));
+    this.npArt.appendChild(nextRail);
     this.np.appendChild(this.npArt);
 
     this.npTitle = el('h2', 'np-title', '');
