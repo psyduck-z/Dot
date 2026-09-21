@@ -1,5 +1,5 @@
 {
-  "version": "17c28e2",
+  "version": "94f1b1c",
   "bundle": "bundle.js",
-  "notes": "Update the logo"
+  "notes": "Time the two halves of a track start separately"
 }
