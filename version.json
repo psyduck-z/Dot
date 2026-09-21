@@ -1,5 +1,5 @@
 {
-  "version": "01b57f2",
+  "version": "54eb091",
   "bundle": "bundle.js",
-  "notes": "Report where the feed's candidates went"
+  "notes": "Fix the classification chain that starved the Music feed"
 }
