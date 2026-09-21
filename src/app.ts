@@ -156,6 +156,8 @@ export class App {
   private tagFatigue = new Map<string, number>();
   /** Consecutive early skips, with no like or completion between them. */
   private skipStreak = 0;
+  /** True mid-drag on the scrubber, so progress updates do not fight it. */
+  private seeking = false;
 
   private libraryList!: HTMLElement;
   private playlistList!: HTMLElement;
@@ -400,15 +402,27 @@ export class App {
     // onto the queue also skipped buildQueue, so none of the artist-cap or
     // tag-variety rules had ever applied to Shorts at all.
     const seen = new Set([...store.loadHistory(), ...this.hidden]);
-    const merged = [...this.queue.map((r) => r.track), ...bought.filter((t) => !seen.has(t.id))];
 
-    this.queue = buildQueue(merged, this.model, {
-      count: QUEUE_CAP,
-      discovery: this.exploreRateNow(),
-      exclude: seen,
-      bucket: contextBucket(),
-      fatigue: this.tagFatigue,
-    });
+    // Re-rank only the Shorts. Feeding the whole queue through a ranking
+    // capped at QUEUE_CAP let a big batch of Shorts crowd the music out
+    // entirely, which is how the Music tab ended up empty after a Shorts
+    // session. The two surfaces share a queue but must not evict each other.
+    const others = this.queue.filter((r) => r.track.kind !== 'short');
+    const shorts = buildQueue(
+      [
+        ...this.queue.filter((r) => r.track.kind === 'short').map((r) => r.track),
+        ...bought.filter((t) => !seen.has(t.id)),
+      ],
+      this.model,
+      {
+        count: QUEUE_CAP - others.length,
+        discovery: this.exploreRateNow(),
+        exclude: seen,
+        bucket: contextBucket(),
+        fatigue: this.tagFatigue,
+      },
+    );
+    this.queue = [...others, ...shorts];
     this.renderHome();
   }
 
@@ -429,6 +443,7 @@ export class App {
     if (this.surface === 'short') {
       this.homeBody.appendChild(el('h2', 'shelf-title', 'Shorts'));
       if (items.length === 0) {
+        this.ensureSurface();
         this.homeBody.appendChild(
           el(
             'p',
@@ -450,6 +465,8 @@ export class App {
     // A vertical list, not a horizontal shelf. Side-scrolling rails hide most
     // of the feed off-screen and fight the page's own scrolling, which is
     // worse on a small screen than it is on a phone.
+    if (items.length === 0) this.ensureSurface();
+
     this.homeBody.appendChild(el('h2', 'shelf-title', 'Made for you'));
     this.homeBody.appendChild(this.verticalList(items.slice(0, 20), this.emptyTextFor()));
 
@@ -475,7 +492,24 @@ export class App {
 
   private emptyTextFor(): string {
     if (!this.youtube.configured) return 'Add a YouTube key in Settings to fill this.';
-    return 'No music in the pool yet.';
+    return this.refilling ? 'Finding music…' : 'Nothing here yet.';
+  }
+
+  /**
+   * Fetches when a surface has nothing to show.
+   *
+   * An empty tab used to be a dead end: the feed only refilled when the queue
+   * ran low overall, so one surface could sit empty while the other was full.
+   */
+  private ensureSurface(): void {
+    if (this.refilling) return;
+    if (this.surface === 'short') {
+      void this.ensureShorts();
+      return;
+    }
+    if (this.queueFor('music').length === 0) {
+      void this.refillQueue().then(() => this.renderHome());
+    }
   }
 
   private shortCell(ranked: RankedTrack): HTMLElement {
@@ -712,7 +746,8 @@ export class App {
     const main = el('div', 'row-main');
     main.appendChild(el('span', 'row-title', ranked.track.title));
 
-    main.appendChild(el('span', 'row-sub', ranked.track.artist));
+    const length = ranked.track.duration > 0 ? ' · ' + formatTime(ranked.track.duration) : '';
+    main.appendChild(el('span', 'row-sub', ranked.track.artist + length));
     row.appendChild(main);
 
     row.addEventListener('click', () => {
@@ -1227,6 +1262,7 @@ export class App {
     const bar = el('div', 'np-bar');
     this.npFill = el('div', 'np-fill');
     bar.appendChild(this.npFill);
+    this.attachSeek(bar);
     this.np.appendChild(bar);
 
     const times = el('div', 'np-times');
@@ -1361,6 +1397,60 @@ export class App {
    * on the spot — needing to leave the player, create a playlist and come back
    * would mean the track you wanted is no longer the one playing.
    */
+  /**
+   * Makes the progress bar draggable.
+   *
+   * While a drag is in progress the fill follows the finger and playback is
+   * left alone, so the bar does not fight the position updates still arriving
+   * from the player. The seek happens once, on release.
+   */
+  private attachSeek(bar: HTMLElement): void {
+    const fractionAt = (clientX: number): number => {
+      const box = bar.getBoundingClientRect();
+      if (box.width <= 0) return 0;
+      return Math.max(0, Math.min(1, (clientX - box.left) / box.width));
+    };
+
+    const preview = (fraction: number): void => {
+      this.seeking = true;
+      this.npFill.style.width = fraction * 100 + '%';
+      this.npElapsed.textContent = formatTime(fraction * this.player.duration);
+    };
+
+    const commit = (fraction: number): void => {
+      const duration = this.player.duration;
+      this.seeking = false;
+      if (duration > 0) this.player.seek(fraction * duration);
+    };
+
+    bar.addEventListener('click', (e: MouseEvent) => commit(fractionAt(e.clientX)));
+
+    bar.addEventListener(
+      'touchstart',
+      (e: TouchEvent) => {
+        const touch = e.touches[0];
+        if (touch) preview(fractionAt(touch.clientX));
+      },
+      { passive: true },
+    );
+    bar.addEventListener(
+      'touchmove',
+      (e: TouchEvent) => {
+        const touch = e.touches[0];
+        if (touch) preview(fractionAt(touch.clientX));
+      },
+      { passive: true },
+    );
+    bar.addEventListener(
+      'touchend',
+      (e: TouchEvent) => {
+        const touch = e.changedTouches[0];
+        commit(touch ? fractionAt(touch.clientX) : 0);
+      },
+      { passive: true },
+    );
+  }
+
   private openPlaylistPicker(): void {
     const track = this.player.track;
     if (!track) return;
@@ -1474,6 +1564,7 @@ export class App {
   }
 
   private renderProgress(current: number, duration: number): void {
+    if (this.seeking) return;
     this.npElapsed.textContent = formatTime(current);
     if (duration > 0) {
       this.npTotal.textContent = formatTime(duration);
