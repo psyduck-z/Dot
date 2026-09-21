@@ -1,5 +1,5 @@
 {
-  "version": "84555e4",
+  "version": "cddcfad",
   "bundle": "bundle.js",
-  "notes": "Split Library from Settings, and give updates a default source"
+  "notes": "Replace imported YouTube playlists with playlists you build"
 }

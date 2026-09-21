@@ -861,7 +861,42 @@ body {
 .np.shorts .np-why,
 .np.shorts .np-bar,
 .np.shorts .np-times,
-.np.shorts .np-status { display: none; }
+.np.shorts /* A button that fills a row, for playlist rows that also carry a delete. */
+.row-open {
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font-family: inherit;
+  text-align: left;
+  padding: 0;
+  cursor: pointer;
+}
+
+/* Modal sheet over Now Playing, for choosing a playlist. */
+.sheet {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 30;
+  background: rgba(0, 0, 0, 0.72);
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+}
+.sheet-panel {
+  margin: 10% 12px 12px;
+  padding: 14px 14px calc(14px + env(safe-area-inset-bottom, 0px));
+  border-radius: 12px;
+  background: #171717;
+}
+.sheet-title {
+  margin: 0 0 10px;
+  font-size: 15px;
+  font-weight: 700;
+}
+
+.np-status { display: none; }
 .np.shorts .np-controls {
   -webkit-flex: 0 0 auto;
   flex: 0 0 auto;
