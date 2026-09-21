@@ -36,6 +36,28 @@ jobs:
           DOT_YT_KEY: ${{ secrets.DOT_YT_KEY }}
         run: node scripts/build.mjs
 
+      - name: Publish web build for over-the-air updates
+        # The APK is a WebView around this bundle, so shipping a new bundle is
+        # usually enough — no reinstall. Host these two files anywhere the
+        # watch can reach and point Settings > Updates at version.json.
+        run: |
+          mkdir -p web
+          cp public/bundle.js web/
+          cp public/index.html web/
+          printf '{
+  "version": "%s",
+  "bundle": "bundle.js",
+  "notes": "%s"
+}
+'             "${GITHUB_SHA::7}"             "$(git log -1 --pretty=%s | tr -d '"')" > web/version.json
+          cat web/version.json
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: dot-web
+          path: web/*
+          if-no-files-found: error
+
       - name: Stage web build as Android assets
         run: |
           mkdir -p android/app/src/main/assets

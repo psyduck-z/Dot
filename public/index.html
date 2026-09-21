@@ -905,6 +905,73 @@ button:focus-visible, input:focus-visible {
 <body>
   <div class="device"><div id="app"></div></div>
   <p class="hint">Watch preview at 410 &times; 502 &mdash; narrow the window below 560px for fullscreen</p>
-  <script src="bundle.js"></script>
+  <script>
+  /*
+   * Boot loader. ES5 only: this runs before the bundle it is deciding about.
+   *
+   * Dot can run a web build downloaded after install, so the APK does not have
+   * to be reinstalled for every change. The packaged bundle stays as the floor.
+   *
+   * The sentinel is the safety net. It is written before a downloaded build
+   * runs and cleared once the app is alive, so a build that crashes on startup
+   * leaves it behind and is thrown away on the next launch. Without that, one
+   * bad update would brick the app on a device with no browser and no easy way
+   * to clear site data.
+   */
+  (function () {
+    var BUNDLE = 'dot.ota.bundle.v1';
+    var VERSION = 'dot.ota.version.v1';
+    var SENTINEL = 'dot.ota.booting.v1';
+
+    function packaged() {
+      var s = document.createElement('script');
+      s.src = 'bundle.js';
+      document.body.appendChild(s);
+    }
+
+    var code = null;
+    var version = null;
+    try {
+      version = localStorage.getItem(VERSION);
+      code = localStorage.getItem(BUNDLE);
+
+      // The last launch from this build never finished starting up.
+      if (code && localStorage.getItem(SENTINEL) === version) {
+        localStorage.removeItem(BUNDLE);
+        localStorage.removeItem(VERSION);
+        localStorage.removeItem(SENTINEL);
+        code = null;
+      }
+    } catch (e) {
+      code = null;
+    }
+
+    if (!code) {
+      packaged();
+      return;
+    }
+
+    try {
+      localStorage.setItem(SENTINEL, version);
+    } catch (e) {
+      /* no storage: fall through and run it anyway */
+    }
+
+    try {
+      // Indirect eval so the bundle evaluates in global scope, as a script tag
+      // would. Synchronous, which is what makes the catch below meaningful.
+      (0, eval)(code);
+    } catch (e) {
+      try {
+        localStorage.removeItem(BUNDLE);
+        localStorage.removeItem(VERSION);
+        localStorage.removeItem(SENTINEL);
+      } catch (e2) {
+        /* nothing useful to do */
+      }
+      packaged();
+    }
+  })();
+  </script>
 </body>
 </html>

@@ -17,6 +17,14 @@ import { TasteModel, labelFor } from './reco/model.ts';
 import { buildQueue, exploreRate, type RankedTrack } from './reco/queue.ts';
 import { contextBucket, featurize, hashKey, normalizeTag } from './reco/features.ts';
 import * as store from './store.ts';
+import {
+  checkForUpdate,
+  isRunningDownloaded,
+  revertToPackaged,
+  runningVersion,
+  setUpdateUrl,
+  updateUrl,
+} from './updater.ts';
 import { button, clear, el, formatTime, paintArt, tintFor, ytThumb } from './ui/dom.ts';
 import type { MusicSource, PlayEvent, Prefs, Track, TrackId } from './types.ts';
 import type { TrackKind } from './sources/kind.ts';
@@ -694,6 +702,66 @@ export class App {
     });
     host.appendChild(keyField);
     host.appendChild(keyState);
+
+    host.appendChild(el('h2', 'shelf-title', 'Updates'));
+    host.appendChild(
+      el(
+        'p',
+        'muted',
+        'Dot can fetch a new build itself, so most changes do not need the APK ' +
+          'reinstalled. Point this at a manifest and press check.',
+      ),
+    );
+
+    const versionLine = el('div', 'stat');
+    versionLine.appendChild(el('span', 'stat-k', 'Running'));
+    versionLine.appendChild(
+      el('span', 'stat-v', runningVersion() + (isRunningDownloaded() ? ' (downloaded)' : '')),
+    );
+    host.appendChild(versionLine);
+
+    const urlField = el('input', 'search-input key-input');
+    urlField.type = 'text';
+    urlField.id = 'dot-update-url';
+    urlField.placeholder = 'https://…/dot/version.json';
+    urlField.autocomplete = 'off';
+    urlField.spellcheck = false;
+    urlField.value = updateUrl();
+    urlField.addEventListener('change', () => setUpdateUrl(urlField.value));
+    host.appendChild(urlField);
+
+    const updateState = el('p', 'readout', '');
+    const checkBtn = button('primary', 'Check for updates');
+    checkBtn.addEventListener('click', () => {
+      setUpdateUrl(urlField.value);
+      checkBtn.disabled = true;
+      updateState.textContent = 'Checking…';
+      void checkForUpdate().then((status) => {
+        updateState.textContent = status.message;
+        checkBtn.disabled = false;
+        if (status.available) {
+          // A downloaded build only takes effect on the next launch, since the
+          // running one is already evaluated.
+          reloadBtn.hidden = false;
+        }
+      });
+    });
+    host.appendChild(checkBtn);
+
+    const reloadBtn = button('toggle', 'Restart to apply');
+    reloadBtn.hidden = true;
+    reloadBtn.addEventListener('click', () => window.location.reload());
+    host.appendChild(reloadBtn);
+    host.appendChild(updateState);
+
+    if (isRunningDownloaded()) {
+      const revert = button('danger', 'Go back to the built-in version');
+      revert.addEventListener('click', () => {
+        revertToPackaged();
+        window.location.reload();
+      });
+      host.appendChild(revert);
+    }
 
     host.appendChild(el('h2', 'shelf-title', 'Taste model'));
     this.statsBox = el('div', 'stats');

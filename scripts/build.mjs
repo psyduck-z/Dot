@@ -49,6 +49,17 @@ function localKey() {
   }
 }
 
+/**
+ * Identifies this build, so the app can tell whether a downloaded bundle is
+ * newer than what it is running. The commit sha when CI supplies one,
+ * otherwise a timestamp, which is enough for local iteration.
+ */
+function buildVersion() {
+  const sha = process.env.GITHUB_SHA;
+  if (sha) return sha.slice(0, 7);
+  return 'dev-' + new Date().toISOString().replace(/[-:T]/g, '').slice(0, 12);
+}
+
 /** @type {import('esbuild').BuildOptions} */
 const options = {
   entryPoints: [path.join(root, 'src/main.ts')],
@@ -63,6 +74,7 @@ const options = {
   define: {
     'process.env.NODE_ENV': JSON.stringify(watch ? 'development' : 'production'),
     __DOT_YT_KEY__: JSON.stringify(localKey()),
+    __DOT_VERSION__: JSON.stringify(buildVersion()),
   },
 };
 

@@ -2,6 +2,7 @@
 import './compat.ts';
 
 import { App } from './app.ts';
+import { markBootSuccessful } from './updater.ts';
 
 const root = document.getElementById('app');
 
@@ -10,4 +11,8 @@ if (!root) {
 }
 
 const app = new App(root);
-void app.start();
+void app.start().then(() => {
+  // Clears the boot sentinel. Until this runs, the downloaded build this
+  // launched from is considered untrusted and will be discarded next time.
+  markBootSuccessful();
+});
