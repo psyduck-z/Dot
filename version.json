@@ -1,5 +1,5 @@
 {
-  "version": "128bc58",
+  "version": "3284021",
   "bundle": "bundle.js",
-  "notes": "Make channels a thing you can follow and browse"
+  "notes": "Fix three costs that grew as Shorts were watched"
 }
