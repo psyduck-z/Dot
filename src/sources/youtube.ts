@@ -121,120 +121,6 @@ function videoIdOf(id: TrackId): string {
   return id.startsWith('youtube:') ? id.slice('youtube:'.length) : id;
 }
 
-export interface ParsedYouTubeLink {
-  kind: 'playlist' | 'video';
-  id: string;
-}
-
-export interface UnsupportedYouTubeLink {
-  kind: 'unsupported';
-  /** Shown to the person verbatim, so it says what to paste instead. */
-  reason: string;
-}
-
-export type YouTubeInput = ParsedYouTubeLink | UnsupportedYouTubeLink;
-
-type ListKind = 'cueable' | 'mix' | 'private';
-
-/**
- * Not every `list=` id is something the embedded player can open, and the
- * difference is invisible in the URL. Measured against the real IFrame player:
- *
- *   OLAK5uy_…    YouTube Music album       → 13/13 ids
- *   RDCLAK5uy_…  YouTube Music playlist    → 137 ids
- *   PL…          ordinary playlist         → 120 ids
- *   RDAMVM…      the auto-mix that rides along on a shared song → nothing, ever
- *   LM           Liked Music               → nothing; it is private to an account
- *
- * So `RD` alone does not mean unreadable — RDCLAK is how YouTube Music names
- * its curated playlists and those read fine. Everything else under RD is a
- * generated radio, which the player will not enumerate for an embed.
- */
-function classifyList(listId: string): ListKind {
-  if (listId === 'LM' || listId === 'WL' || listId.startsWith('LL')) return 'private';
-  if (listId.startsWith('RD') && !listId.startsWith('RDCLAK')) return 'mix';
-  return 'cueable';
-}
-
-const PRIVATE_LIST_REASON =
-  'That is a private YouTube Music list (Liked Music, Watch Later or your library), ' +
-  'so nothing outside your account can read it. Open a playlist or album and copy that link instead.';
-
-const MIX_LIST_REASON =
-  'That link points at a generated radio mix, which the player will not open for an embed. ' +
-  'Paste an album, a playlist, or a single song instead.';
-
-/**
- * Accepts whatever a person actually pastes: a full watch URL, a playlist URL,
- * a youtu.be short link, a music.youtube.com link, or a bare id.
- *
- * A watch URL that also carries `list` is treated as a playlist, since that is
- * nearly always the intent — unless the list is one the player cannot read, and
- * YouTube Music's Share always attaches one of those (`&list=RDAMVM<video id>`).
- * In that case the song itself is right there in the URL, so take the song.
- */
-export function parseYouTubeInput(input: string): YouTubeInput | null {
-  const text = input.trim();
-  if (!text) return null;
-
-  const video =
-    /[?&]v=([A-Za-z0-9_-]{11})/.exec(text)?.[1] ??
-    /youtu\.be\/([A-Za-z0-9_-]{11})/.exec(text)?.[1] ??
-    /youtube\.com\/shorts\/([A-Za-z0-9_-]{11})/.exec(text)?.[1] ??
-    null;
-
-  const list = /[?&]list=([A-Za-z0-9_-]+)/.exec(text)?.[1] ?? null;
-
-  if (list) {
-    const kind = classifyList(list);
-    if (kind === 'cueable') return { kind: 'playlist', id: list };
-    if (video) return { kind: 'video', id: video };
-    return { kind: 'unsupported', reason: kind === 'private' ? PRIVATE_LIST_REASON : MIX_LIST_REASON };
-  }
-
-  if (video) return { kind: 'video', id: video };
-
-  // Album and artist pages on music.youtube.com are browse ids (MPREb_…, UC…),
-  // which are not playlists and never will be. Say so rather than shrugging.
-  if (/music\.youtube\.com\/(browse|channel|immersive)/.test(text)) {
-    return {
-      kind: 'unsupported',
-      reason:
-        'That is a YouTube Music browse link, which is not a playlist. ' +
-        'Open the album or playlist, hit Share, and paste the link that ends in ?list=…',
-    };
-  }
-
-  // Bare ids: playlists start with PL/UU/OL/RD and are longer than a video id.
-  if (/^(PL|UU|OL|RD|FL|LL)[A-Za-z0-9_-]{10,}$/.test(text)) {
-    const kind = classifyList(text);
-    if (kind === 'cueable') return { kind: 'playlist', id: text };
-    return { kind: 'unsupported', reason: kind === 'private' ? PRIVATE_LIST_REASON : MIX_LIST_REASON };
-  }
-  if (/^[A-Za-z0-9_-]{11}$/.test(text)) return { kind: 'video', id: text };
-
-  return null;
-}
-
-/** A track we know exists but have not yet heard a title for. */
-function placeholderTrack(videoId: string, tags: string[], label: string, index: number): Track {
-  return {
-    id: 'youtube:' + videoId,
-    sourceId: 'youtube',
-    title: label + ' · ' + (index + 1),
-    artist: 'YouTube',
-    duration: 0,
-    artworkUrl: 'https://i.ytimg.com/vi/' + videoId + '/mqdefault.jpg',
-    tags,
-    // Nothing is known yet — no duration, no category, not even a title — so
-    // classification has to wait for the player. Music is the right default
-    // for a playlist someone deliberately added to a music app, and it gets
-    // corrected on first play. Without this every playlist track silently
-    // filed itself under Videos.
-    kind: 'music',
-  };
-}
-
 /**
  * Channel names are noisy as artist names — "Artist - Topic" is YouTube's
  * auto-generated music channel convention and the suffix is not part of the name.
@@ -391,29 +277,9 @@ export class YouTubeSource implements MusicSource {
     return merged;
   }
 
-  /** Registers the ids read out of a playlist, tagged with that playlist's tags. */
-  registerPlaylist(videoIds: string[], tags: string[], label: string): Track[] {
-    const out: Track[] = [];
-    videoIds.forEach((videoId, index) => {
-      const id = 'youtube:' + videoId;
-      const existing = this.catalog[id];
-      if (existing) {
-        // Already heard: keep the real title, just widen its tags.
-        existing.tags = Array.from(new Set([...existing.tags, ...tags]));
-        out.push(existing);
-      } else {
-        const track = placeholderTrack(videoId, tags, label, index);
-        this.catalog[id] = track;
-        out.push(track);
-      }
-    });
-    store.saveYtCatalog(this.catalog);
-    return out;
-  }
-
   /**
    * Everything already known locally, filtered and ready to rank. Free: no
-   * request, no quota. This is what playlists exist to fill.
+   * request, no quota. Grows from tracks that have actually been played.
    */
   catalogTracks(limit = 200): Track[] {
     return this.applyFilter(this.knownTracks()).slice(0, limit);

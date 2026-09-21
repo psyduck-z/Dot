@@ -210,6 +210,48 @@ export function savePlaylists(playlists: Playlist[]): void {
   write(KEY.playlists, playlists);
 }
 
+export function createPlaylist(name: string): Playlist {
+  const playlist: Playlist = {
+    id: 'pl-' + Date.now().toString(36),
+    name: name.trim() || 'Untitled',
+    tracks: [],
+    createdAt: Date.now(),
+    updatedAt: Date.now(),
+  };
+  const all = loadPlaylists();
+  all.unshift(playlist);
+  savePlaylists(all);
+  return playlist;
+}
+
+export function deletePlaylist(id: string): Playlist[] {
+  const remaining = loadPlaylists().filter((p) => p.id !== id);
+  savePlaylists(remaining);
+  return remaining;
+}
+
+/** Adding a track already present is a no-op rather than a duplicate. */
+export function addToPlaylist(id: string, track: Track): boolean {
+  const all = loadPlaylists();
+  const playlist = all.find((p) => p.id === id);
+  if (!playlist) return false;
+  if (playlist.tracks.some((t) => t.id === track.id)) return false;
+
+  playlist.tracks.push(track);
+  playlist.updatedAt = Date.now();
+  savePlaylists(all);
+  return true;
+}
+
+export function removeFromPlaylist(id: string, trackId: TrackId): void {
+  const all = loadPlaylists();
+  const playlist = all.find((p) => p.id === id);
+  if (!playlist) return;
+  playlist.tracks = playlist.tracks.filter((t) => t.id !== trackId);
+  playlist.updatedAt = Date.now();
+  savePlaylists(all);
+}
+
 /** The free YouTube Data API allowance, per project, per day. */
 export const YOUTUBE_DAILY_QUOTA = 10000;
 

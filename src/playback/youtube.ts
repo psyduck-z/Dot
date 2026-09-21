@@ -21,16 +21,6 @@ import type { Track } from '../types.ts';
 
 const IFRAME_API = 'https://www.youtube.com/iframe_api';
 const POLL_MS = 500;
-/** Enumeration polls faster than playback progress; a list lands in ~1.5s. */
-const LIST_POLL_MS = 250;
-const LIST_ATTEMPTS = 80;
-const LIST_READY_MS = 15000;
-/**
- * A list the player refuses sits at CUED with its id set and an empty array,
- * forever. A real list fills within about a second, so once the player admits
- * to holding the list we asked for, this long without ids means never.
- */
-const LIST_EMPTY_GRACE_MS = 5000;
 
 /* The IFrame API defines a global; these are the parts we use. */
 interface YtPlayer {
@@ -38,11 +28,6 @@ interface YtPlayer {
   unloadModule(name: string): void;
   loadModule(name: string): void;
   setOption(module: string, option: string, value: unknown): void;
-  cueVideoById(id: string): void;
-  cuePlaylist(options: { listType: string; list: string }): void;
-  getPlaylist(): string[] | null;
-  /** Undocumented but present, and the only way to know which list is loaded. */
-  getPlaylistId?(): string | null;
   getVideoData(): { video_id?: string; title?: string; author?: string } | null;
   playVideo(): void;
   pauseVideo(): void;
@@ -339,95 +324,6 @@ export class YouTubeEngine implements PlaybackEngine {
       return this.player.getPlayerState() !== window.YT.PlayerState.PLAYING;
     } catch {
       return true;
-    }
-  }
-
-  /**
-   * Reads the video ids out of a public playlist, with no API key.
-   *
-   * Cueing a list loads it without starting playback, and getPlaylist() then
-   * returns the ids. Two things about that are not obvious and both bite:
-   *
-   *  - It has to be a throwaway player. On a reused one, getPlaylistId() flips
-   *    to the new list within a poll or two while getPlaylist() keeps handing
-   *    back the *previous* list's ids — measured still stale after 15s. So a
-   *    shared player silently returns the last playlist you added.
-   *  - There is no "playlist ready" event, and the array arrives in pieces, so
-   *    the first non-empty read is not the whole list. Wait for the player to
-   *    confirm the list we asked for and for the ids to stop changing.
-   *
-   * Cueing deliberately does not autoplay, so this is silent, and using its own
-   * player means adding a playlist no longer interrupts what is playing.
-   */
-  async enumeratePlaylist(listId: string): Promise<string[]> {
-    const YT = await loadIframeApi();
-
-    const wrapper = document.createElement('div');
-    const mount = document.createElement('div');
-    wrapper.appendChild(mount);
-    this.host.appendChild(wrapper);
-    const wasHidden = this.host.hidden;
-    this.host.hidden = false;
-
-    let probe: YtPlayer | null = null;
-    try {
-      probe = await new Promise<YtPlayer>((resolve, reject) => {
-        const timer = setTimeout(() => reject(new Error('YouTube player timed out')), LIST_READY_MS);
-        const created = new YT.Player(mount, {
-          width: '100%',
-          height: '100%',
-          playerVars: { controls: 0, playsinline: 1, rel: 0, modestbranding: 1, iv_load_policy: 3 },
-          events: {
-            onReady: () => {
-              clearTimeout(timer);
-              resolve(created);
-            },
-          },
-        });
-      });
-
-      probe.cuePlaylist({ listType: 'playlist', list: listId });
-
-      let previous = '';
-      let acceptedAt = 0;
-      for (let attempt = 0; attempt < LIST_ATTEMPTS; attempt++) {
-        await new Promise((r) => setTimeout(r, LIST_POLL_MS));
-
-        let ids: string[] | null = null;
-        let loaded: string | null = listId;
-        try {
-          ids = probe.getPlaylist();
-          // Older players may not expose it; then the stability check stands alone.
-          loaded = probe.getPlaylistId ? probe.getPlaylistId() : listId;
-        } catch {
-          continue; /* not ready yet */
-        }
-
-        if (loaded === listId && acceptedAt === 0) acceptedAt = Date.now();
-
-        if (!Array.isArray(ids) || ids.length === 0) {
-          // Private lists and generated radio mixes land here and never leave.
-          if (acceptedAt > 0 && Date.now() - acceptedAt > LIST_EMPTY_GRACE_MS) return [];
-          continue;
-        }
-
-        const joined = ids.join(',');
-        if (loaded === listId && joined === previous) return ids;
-        previous = joined;
-      }
-      return [];
-    } catch {
-      // A list the player refuses to open — a private one, or a generated radio
-      // mix — never fires onReady with a list. Treat it as empty.
-      return [];
-    } finally {
-      try {
-        probe?.destroy();
-      } catch {
-        /* the iframe may already be gone */
-      }
-      wrapper.remove();
-      this.host.hidden = wasHidden;
     }
   }
 

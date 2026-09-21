@@ -10,7 +10,7 @@
  * position and audio survive navigation.
  */
 
-import { YouTubeSource, parseYouTubeInput } from './sources/youtube.ts';
+import { YouTubeSource } from './sources/youtube.ts';
 import { YouTubeEngine } from './playback/youtube.ts';
 import { Player } from './player.ts';
 import { TasteModel, labelFor } from './reco/model.ts';
@@ -115,6 +115,7 @@ export class App {
   private npLike!: HTMLButtonElement;
   private npStatus!: HTMLElement;
   private npSource!: HTMLElement;
+  private npAdd!: HTMLButtonElement;
 
   // Home shelves
   private homeGreeting!: HTMLElement;
@@ -418,9 +419,7 @@ export class App {
   }
 
   private emptyTextFor(): string {
-    if (this.prefs.youtubePlaylists.length === 0 && !this.youtube.configured) {
-      return 'Add a playlist in Library to fill this.';
-    }
+    if (!this.youtube.configured) return 'Add a YouTube key in Settings to fill this.';
     return 'No music in the pool yet.';
   }
 
@@ -541,42 +540,83 @@ export class App {
     host.appendChild(this.libraryList);
 
     host.appendChild(el('h2', 'shelf-title', 'Playlists'));
-    host.appendChild(
-      el(
-        'p',
-        'muted',
-        'Paste a public playlist or album link. Reading one costs no API quota ' +
-          'at all, so the feed runs free and your whole daily allowance stays ' +
-          'available for searching. Tags you add are what the recommender learns from.',
-      ),
-    );
 
-    const linkField = el('input', 'search-input key-input');
-    linkField.type = 'text';
-    linkField.id = 'dot-yt-link';
-    linkField.placeholder = 'youtube.com/playlist?list=…';
-    linkField.autocomplete = 'off';
-    linkField.spellcheck = false;
-    host.appendChild(linkField);
-
-    const tagField = el('input', 'search-input key-input');
-    tagField.type = 'text';
-    tagField.id = 'dot-yt-tags';
-    tagField.placeholder = 'tags, comma separated — e.g. phonk, drift';
-    tagField.autocomplete = 'off';
-    host.appendChild(tagField);
-
-    const addState = el('p', 'readout', '');
-    const addBtn = button('primary', 'Add playlist');
-    addBtn.addEventListener('click', () => {
-      void this.addYouTubeLink(linkField, tagField, addState, addBtn);
+    const create = button('primary', 'New playlist');
+    create.addEventListener('click', () => {
+      const name = window.prompt('Name this playlist');
+      if (name === null) return;
+      store.createPlaylist(name);
+      this.renderPlaylists();
     });
-    host.appendChild(addBtn);
-    host.appendChild(addState);
+    host.appendChild(create);
 
     this.playlistList = el('div', 'list');
     host.appendChild(this.playlistList);
+  }
 
+  /**
+   * Playlists the user built. Tapping one plays it in order, replacing the
+   * queue rather than appending to it — choosing a playlist is an explicit
+   * "play this now", not a suggestion to fold into the feed.
+   */
+  private renderPlaylists(): void {
+    if (!this.playlistList) return;
+    clear(this.playlistList);
+
+    const playlists = store.loadPlaylists();
+    if (playlists.length === 0) {
+      this.playlistList.appendChild(
+        el('p', 'empty', 'No playlists yet. Add tracks from the player.'),
+      );
+      return;
+    }
+
+    for (const playlist of playlists) {
+      const row = el('div', 'row');
+
+      const art = el('div', 'row-art', '≡');
+      art.style.backgroundColor = tintFor(playlist.name);
+      row.appendChild(art);
+
+      const open = button('row-main row-open');
+      open.appendChild(el('span', 'row-title', playlist.name));
+      open.appendChild(
+        el(
+          'span',
+          'row-sub',
+          playlist.tracks.length + (playlist.tracks.length === 1 ? ' track' : ' tracks'),
+        ),
+      );
+      open.addEventListener('click', () => void this.playPlaylist(playlist.id));
+      row.appendChild(open);
+
+      const remove = button('mini-btn', '✕', 'Delete playlist');
+      remove.addEventListener('click', () => {
+        if (!window.confirm('Delete "' + playlist.name + '"?')) return;
+        store.deletePlaylist(playlist.id);
+        this.renderPlaylists();
+      });
+      row.appendChild(remove);
+
+      this.playlistList.appendChild(row);
+    }
+  }
+
+  private async playPlaylist(id: string): Promise<void> {
+    const playlist = store.loadPlaylists().find((pl) => pl.id === id);
+    if (!playlist || playlist.tracks.length === 0) return;
+
+    const bucket = contextBucket();
+    this.queue = playlist.tracks.map((track) => ({
+      track,
+      score: this.model.score(featurize(track, bucket)),
+      explored: false,
+    }));
+
+    const first = this.queue.shift();
+    if (!first) return;
+    await this.playTrack(first);
+    this.openNowPlaying();
   }
 
   /** Everything configurable. Separated from Library so neither screen is
@@ -984,6 +1024,10 @@ export class App {
 
     // Standing instruction, distinct from a dislike: a dislike teaches the
     // model, this removes the track from circulation entirely.
+    this.npAdd = button('np-hide', 'Add to playlist');
+    this.npAdd.addEventListener('click', () => this.openPlaylistPicker());
+    this.np.appendChild(this.npAdd);
+
     const hide = button('np-hide', "Don't show this again");
     hide.addEventListener('click', () => this.hideCurrent());
     this.np.appendChild(hide);
@@ -1046,6 +1090,67 @@ export class App {
     void this.next('skipped');
   }
 
+  /**
+   * A sheet listing the playlists a track can go into, plus a way to make one
+   * on the spot — needing to leave the player, create a playlist and come back
+   * would mean the track you wanted is no longer the one playing.
+   */
+  private openPlaylistPicker(): void {
+    const track = this.player.track;
+    if (!track) return;
+
+    const sheet = el('div', 'sheet');
+    const panel = el('div', 'sheet-panel');
+    panel.appendChild(el('h3', 'sheet-title', 'Add to playlist'));
+
+    const close = (): void => {
+      if (sheet.parentNode) sheet.parentNode.removeChild(sheet);
+    };
+
+    const addTo = (id: string): void => {
+      const added = store.addToPlaylist(id, track);
+      this.setStatus(added ? 'Added to playlist' : 'Already in that playlist');
+      this.renderPlaylists();
+      close();
+    };
+
+    const newOne = button('primary', 'New playlist');
+    newOne.addEventListener('click', () => {
+      const name = window.prompt('Name this playlist');
+      if (name === null) return;
+      addTo(store.createPlaylist(name).id);
+    });
+    panel.appendChild(newOne);
+
+    const list = el('div', 'list');
+    for (const playlist of store.loadPlaylists()) {
+      const row = button('row');
+      const art = el('div', 'row-art', '≡');
+      art.style.backgroundColor = tintFor(playlist.name);
+      row.appendChild(art);
+
+      const main = el('div', 'row-main');
+      main.appendChild(el('span', 'row-title', playlist.name));
+      main.appendChild(el('span', 'row-sub', playlist.tracks.length + ' tracks'));
+      row.appendChild(main);
+
+      row.addEventListener('click', () => addTo(playlist.id));
+      list.appendChild(row);
+    }
+    panel.appendChild(list);
+
+    const cancel = button('toggle', 'Cancel');
+    cancel.addEventListener('click', close);
+    panel.appendChild(cancel);
+
+    // Tapping the dimmed area dismisses, but taps inside the panel must not.
+    sheet.addEventListener('click', (e) => {
+      if (e.target === sheet) close();
+    });
+    sheet.appendChild(panel);
+    this.np.appendChild(sheet);
+  }
+
   private openNowPlaying(): void {
     this.np.classList.add('open');
   }
@@ -1075,6 +1180,7 @@ export class App {
     const kind = track.kind ?? 'video';
     this.np.classList.toggle('video', track.sourceId === 'youtube');
     this.np.classList.toggle('shorts', kind === 'short');
+    this.npAdd.hidden = kind === 'short';
 
     this.npLike.textContent = this.likes.has(track.id) ? '♥' : '♡';
     this.npLike.classList.toggle('on', this.likes.has(track.id));
@@ -1182,9 +1288,9 @@ export class App {
 
       if (this.queue.length === 0) {
         this.setStatus(
-          this.prefs.youtubePlaylists.length === 0
-            ? 'Nothing to play yet — add a playlist in Library.'
-            : 'No tracks available. Check your connection.',
+          this.youtube.configured
+            ? 'No tracks available. Check your connection.'
+            : 'Add a YouTube key in Settings to start.',
         );
       }
     } finally {
@@ -1315,125 +1421,6 @@ export class App {
         return;
       }
       await new Promise((r) => setTimeout(r, 300));
-    }
-  }
-
-  /* ------------------------------------------------------- youtube playlists */
-
-  /**
-   * Adds a playlist or a single video.
-   *
-   * Enumeration goes through the embedded player rather than the Data API,
-   * which is why this costs nothing: the player can read a public list without
-   * authentication, where playlistItems.list would spend quota.
-   */
-  private async addYouTubeLink(
-    linkField: HTMLInputElement,
-    tagField: HTMLInputElement,
-    state: HTMLElement,
-    btn: HTMLButtonElement,
-  ): Promise<void> {
-    const parsed = parseYouTubeInput(linkField.value);
-    if (!parsed) {
-      state.textContent = 'That does not look like a YouTube link.';
-      return;
-    }
-    // Some list ids exist but cannot be opened by an embed; say which and why.
-    if (parsed.kind === 'unsupported') {
-      state.textContent = parsed.reason;
-      return;
-    }
-
-    const tags = tagField.value
-      .split(',')
-      .map((t) => t.trim().toLowerCase())
-      .filter((t) => t.length > 0);
-
-    btn.disabled = true;
-    try {
-      if (parsed.kind === 'video') {
-        const [track] = this.youtube.registerPlaylist([parsed.id], tags, 'Track');
-        state.textContent = 'Added. Playing now.';
-        linkField.value = '';
-        if (track) {
-          await this.playTrack({ track, score: 1, explored: false });
-          this.openNowPlaying();
-        }
-        return;
-      }
-
-      state.textContent = 'Reading playlist…';
-      const ids = await this.ytEngine.enumeratePlaylist(parsed.id);
-      if (ids.length === 0) {
-        state.textContent = 'Could not read that playlist. Is it public?';
-        return;
-      }
-
-      const label = tags[0] ?? 'Playlist';
-      this.youtube.registerPlaylist(ids, tags, label);
-
-      const saved = this.prefs.youtubePlaylists.filter((pl) => pl.id !== parsed.id);
-      saved.unshift({ id: parsed.id, label, tags, count: ids.length });
-      this.prefs.youtubePlaylists = saved;
-
-      // Playlist tags double as taste seeds so the model can rank the tracks.
-      for (const tag of tags) {
-        if (this.prefs.musicTags.indexOf(tag) < 0) this.prefs.musicTags.push(tag);
-      }
-      store.savePrefs(this.prefs);
-      this.model.seed(tags, [], 2, 0.5);
-      store.saveModel(this.model);
-
-      state.textContent = 'Added ' + ids.length + ' tracks.';
-      linkField.value = '';
-      tagField.value = '';
-
-      await this.refillQueue();
-      this.renderHome();
-      this.renderPlaylists();
-    } catch {
-      state.textContent = 'Something went wrong reading that link.';
-    } finally {
-      btn.disabled = false;
-    }
-  }
-
-  private renderPlaylists(): void {
-    if (!this.playlistList) return;
-    clear(this.playlistList);
-
-    if (this.prefs.youtubePlaylists.length === 0) {
-      this.playlistList.appendChild(el('p', 'empty', 'No playlists yet.'));
-      return;
-    }
-
-    for (const saved of this.prefs.youtubePlaylists) {
-      const row = el('div', 'row');
-
-      const art = el('div', 'row-art', '≡');
-      art.style.backgroundColor = tintFor(saved.label);
-      row.appendChild(art);
-
-      const main = el('div', 'row-main');
-      main.appendChild(el('span', 'row-title', saved.label));
-      main.appendChild(
-        el(
-          'span',
-          'row-sub',
-          saved.count + ' tracks' + (saved.tags.length > 0 ? ' · ' + saved.tags.join(', ') : ''),
-        ),
-      );
-      row.appendChild(main);
-
-      const remove = button('mini-btn', '✕', 'Remove playlist');
-      remove.addEventListener('click', () => {
-        this.prefs.youtubePlaylists = this.prefs.youtubePlaylists.filter((pl) => pl.id !== saved.id);
-        store.savePrefs(this.prefs);
-        this.renderPlaylists();
-      });
-      row.appendChild(remove);
-
-      this.playlistList.appendChild(row);
     }
   }
 

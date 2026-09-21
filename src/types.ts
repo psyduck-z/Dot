@@ -112,7 +112,12 @@ export interface PlayEvent {
 export interface Playlist {
   id: string;
   name: string;
-  trackIds: TrackId[];
+  /**
+   * Whole tracks rather than ids. A playlist should still list and play after
+   * a source stops returning a track, and there is no catalogue to resolve ids
+   * against offline.
+   */
+  tracks: Track[];
   createdAt: number;
   updatedAt: number;
 }
@@ -144,24 +149,10 @@ export interface Prefs {
    * domain types free of any dependency on a particular source.
    */
   filterLevel: 'off' | 'normal' | 'strict';
-  /** Public YouTube playlists added by the user, with the tags they assigned. */
-  youtubePlaylists: SavedPlaylist[];
   /** Captions are off by default; this puts them back under user control. */
   captionsEnabled: boolean;
 }
 
-export interface SavedPlaylist {
-  /** YouTube playlist id, e.g. PLxxxx or OLAK5uy_xxxx. */
-  id: string;
-  label: string;
-  /**
-   * User-assigned tags. A keyless playlist carries no per-track metadata, so
-   * these are the recommender's only signal for everything inside it.
-   */
-  tags: string[];
-  /** How many video ids the player reported, for the Library listing. */
-  count: number;
-}
 
 export const DEFAULT_PREFS: Prefs = {
   musicTags: [],
@@ -173,6 +164,5 @@ export const DEFAULT_PREFS: Prefs = {
   cacheLimitMb: 256,
   youtubeApiKey: '',
   filterLevel: 'normal',
-  youtubePlaylists: [],
   captionsEnabled: false,
 };
