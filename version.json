@@ -1,5 +1,5 @@
 {
-  "version": "102d5d5",
+  "version": "1ddbd4c",
   "bundle": "bundle.js",
-  "notes": "Show the panel glow, release channel mode, enlarge preference chips"
+  "notes": "Stop Shorts repeating, and make the feed react to being wrong"
 }

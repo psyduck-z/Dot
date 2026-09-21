@@ -933,12 +933,29 @@ body {
 /* Tap the video to play or pause; the player handles that itself. */
 .np.shorts .np-main,
 .np.shorts .np-next { display: none; }
+/* Labelled in Shorts, where there is no other context to work out what a
+   lone glyph means. The label is generated content, so updating the button's
+   text to swap a heart for a filled one leaves it alone. */
 .np.shorts .np-ctl {
-  width: 34px;
-  height: 34px;
-  margin: 0 16px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  width: 62px;
+  height: 40px;
+  margin: 0 6px;
+  border-radius: 8px;
   font-size: 15px;
 }
+.np.shorts .np-ctl::after {
+  content: attr(data-label);
+  margin-top: 2px;
+  font-size: 9px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  color: #7c7c7c;
+}
+.np.shorts .np-ctl.on::after { color: #1fd18c; }
 
 /* Everything that is not the video gives up its height.
 
