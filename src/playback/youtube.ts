@@ -20,7 +20,17 @@ import type { EngineEvents, PlaybackEngine } from './engine.ts';
 import type { Track } from '../types.ts';
 
 const IFRAME_API = 'https://www.youtube.com/iframe_api';
-const POLL_MS = 500;
+/**
+ * How often progress is read back out of the player.
+ *
+ * Every tick is two calls across the frame boundary and a handful of DOM
+ * writes. The rate is set by what can actually be seen: the scrubber while
+ * Now Playing is open, a two-pixel line while it is not, and nothing at all
+ * once the screen has gone ambient — which is the state music spends most of
+ * its time in.
+ */
+const POLL_VISIBLE_MS = 500;
+const POLL_MINIMAL_MS = 2000;
 
 /* The IFrame API defines a global; these are the parts we use. */
 interface YtPlayer {
@@ -97,6 +107,11 @@ export class YouTubeEngine implements PlaybackEngine {
   private player: YtPlayer | null = null;
   private events: EngineEvents = {};
   private poll: ReturnType<typeof setInterval> | null = null;
+  private pollMs = POLL_VISIBLE_MS;
+  /** Duration is fixed for a video; asking every tick was a wasted call. */
+  private knownDuration = 0;
+  /** The video captions were last silenced for. */
+  private silencedFor: string | null = null;
   private ready: Promise<YtPlayer> | null = null;
   private pendingVolume = 80;
   private track: Track | null = null;
@@ -204,12 +219,23 @@ export class YouTubeEngine implements PlaybackEngine {
     return this.ready;
   }
 
+  /**
+   * `ms` of zero stops it. Called as the UI's visibility changes, so a player
+   * nobody is watching is not being interrogated twice a second.
+   */
+  setPollInterval(ms: number): void {
+    if (ms === this.pollMs && (ms === 0) === (this.poll === null)) return;
+    this.pollMs = ms;
+    this.stopPolling();
+    if (ms > 0 && !this.isPaused()) this.startPolling();
+  }
+
   private startPolling(): void {
-    if (this.poll) return;
+    if (this.poll || this.pollMs <= 0) return;
     this.poll = setInterval(() => {
       if (!this.player) return;
       this.events.onTime?.(this.currentTime(), this.duration());
-    }, POLL_MS);
+    }, this.pollMs);
   }
 
   private stopPolling(): void {
@@ -229,6 +255,7 @@ export class YouTubeEngine implements PlaybackEngine {
    */
   setCaptionsEnabled(enabled: boolean): void {
     this.captionsEnabled = enabled;
+    this.silencedFor = null;
     if (!enabled) {
       this.silenceCaptions();
       return;
@@ -249,6 +276,11 @@ export class YouTubeEngine implements PlaybackEngine {
   private silenceCaptions(): void {
     const player = this.player;
     if (!player || this.captionsEnabled) return;
+    // PLAYING fires on every resume and after every seek; the caption track
+    // only changes when the video does.
+    const current = this.track?.id ?? null;
+    if (current !== null && current === this.silencedFor) return;
+    this.silencedFor = current;
     for (const moduleName of ['captions', 'cc']) {
       try {
         player.unloadModule(moduleName);
@@ -266,6 +298,7 @@ export class YouTubeEngine implements PlaybackEngine {
   async load(track: Track, handle: string): Promise<void> {
     this.track = track;
     this.endedFor = null;
+    this.knownDuration = 0;
     this.host.hidden = false;
     const player = await this.ensurePlayer();
     player.loadVideoById(handle);
@@ -310,8 +343,10 @@ export class YouTubeEngine implements PlaybackEngine {
   }
 
   duration(): number {
+    if (this.knownDuration > 0) return this.knownDuration;
     try {
       const d = this.player?.getDuration() ?? 0;
+      if (d > 0) this.knownDuration = d;
       return d > 0 ? d : (this.track?.duration ?? 0);
     } catch {
       return this.track?.duration ?? 0;

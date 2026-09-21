@@ -190,6 +190,8 @@ export class App {
   /** Whether the shell is currently being asked to keep the screen on. */
   private keepingAwake = false;
   private ambientTimer = 0;
+  private lastElapsed = '';
+  private lastFillPct = -1;
   /** True while the double-tap has taken the screen down to its floor. */
   private dimmed = false;
   private lastTapAt = 0;
@@ -1820,11 +1822,15 @@ export class App {
   private scheduleAmbient(): void {
     window.clearTimeout(this.ambientTimer);
     this.np.classList.remove('ambient');
+    this.tunePolling();
     if (!this.prefs.keepScreenOn) return;
     if ((this.player.track?.kind ?? 'music') === 'short') return;
 
     this.ambientTimer = window.setTimeout(() => {
-      if (this.player.playing) this.np.classList.add('ambient');
+      if (this.player.playing) {
+        this.np.classList.add('ambient');
+        this.tunePolling();
+      }
     }, AMBIENT_DELAY_MS);
   }
 
@@ -1866,12 +1872,27 @@ export class App {
     this.np.addEventListener('click', (e: MouseEvent) => onTap(e.target));
   }
 
+  /**
+   * Sets how often the player is polled, from what can actually be seen.
+   *
+   * Nothing shows progress once the screen has gone ambient, and that is where
+   * music spends most of its time — so the player stops being asked at all
+   * rather than twice a second for a number nobody reads.
+   */
+  private tunePolling(): void {
+    const npOpen = this.np.classList.contains('open');
+    const ambient = this.np.classList.contains('ambient');
+    this.ytEngine.setPollInterval(ambient ? 0 : npOpen ? 500 : 2000);
+  }
+
   private openNowPlaying(): void {
     this.np.classList.add('open');
+    this.tunePolling();
   }
 
   private closeNowPlaying(): void {
     this.np.classList.remove('open');
+    this.tunePolling();
     if (this.homeStale) this.renderHome();
   }
 
@@ -1899,6 +1920,8 @@ export class App {
     this.np.classList.toggle('shorts', kind === 'short');
     this.npAdd.hidden = kind === 'short';
 
+    this.lastElapsed = '';
+    this.lastFillPct = -1;
     this.npLike.textContent = this.likes.has(track.id) ? '♥' : '♡';
     this.npLike.classList.toggle('on', this.likes.has(track.id));
 
@@ -1926,13 +1949,23 @@ export class App {
 
   private renderProgress(current: number, duration: number): void {
     if (this.seeking) return;
-    this.npElapsed.textContent = formatTime(current);
-    if (duration > 0) {
-      this.npTotal.textContent = formatTime(duration);
-      const pct = Math.min(100, (current / duration) * 100);
-      this.npFill.style.width = pct + '%';
-      this.miniProgress.style.width = pct + '%';
+
+    // The clock changes once a second and the bar moves in fractions of a
+    // percent; writing either on every tick was repainting for nothing.
+    const elapsed = formatTime(current);
+    if (elapsed !== this.lastElapsed) {
+      this.lastElapsed = elapsed;
+      this.npElapsed.textContent = elapsed;
     }
+
+    if (duration <= 0) return;
+    const pct = Math.round(Math.min(100, (current / duration) * 100) * 2) / 2;
+    if (pct === this.lastFillPct) return;
+    this.lastFillPct = pct;
+
+    this.npTotal.textContent = formatTime(duration);
+    this.npFill.style.width = pct + '%';
+    this.miniProgress.style.width = pct + '%';
   }
 
   private renderPlayState(playing: boolean): void {
