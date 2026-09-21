@@ -1,0 +1,5 @@
+{
+  "version": "84555e4",
+  "bundle": "bundle.js",
+  "notes": "Split Library from Settings, and give updates a default source"
+}
