@@ -87,6 +87,8 @@ const AMBIENT_DELAY_MS = 25000;
 const DOUBLE_TAP_MS = 350;
 /** The dimmest the window can go without being off. */
 const DIM_FLOOR = 0.01;
+/** Must match the rail width in the stylesheet. */
+const RAIL_WIDTH = 62;
 /** The only sections long enough to be worth hiding. */
 const COLLAPSIBLE_SECTIONS = ['Music tags', 'Shorts topics'];
 
@@ -275,7 +277,10 @@ export class App {
       onStateChange: (playing) => {
         this.renderPlayState(playing);
         // markStarted is a no-op unless a start is actually being timed.
-        if (playing) this.markStarted();
+        if (playing) {
+          this.markStarted();
+          this.fitShortsStage();
+        }
         this.updateKeepAwake(playing);
         this.scheduleAmbient();
         // Keyless playlists arrive as bare video ids, so the real title only
@@ -1654,6 +1659,7 @@ export class App {
     this.np.appendChild(this.npStatus);
 
     this.attachShortsSwipe();
+    window.addEventListener('resize', () => this.fitShortsStage());
     this.attachDimTap();
     this.applyBrightness();
     this.np.addEventListener('touchstart', () => this.scheduleAmbient(), { passive: true });
@@ -2018,9 +2024,50 @@ export class App {
     this.ytEngine.setPollInterval(ambient ? 0 : npOpen ? 500 : 2000);
   }
 
+  /**
+   * Sizes the player to 9:16 from the stage's measured height.
+   *
+   * The stylesheet's viewport-relative cap is a fallback: it assumes the stage
+   * is a fixed fraction of the screen, and the header and controls make that
+   * only roughly true — which is why the picture came up short of filling the
+   * space. Measuring is exact. Driven from everywhere the layout can settle,
+   * because a single call after a class change reads the old height.
+   */
+  private fitShortsStage(): void {
+    if (!this.np.classList.contains('shorts')) {
+      this.ytHost.style.width = '';
+      this.ytHost.style.marginLeft = '';
+      this.ytHost.style.left = '';
+      this.ytHost.style.right = '';
+      return;
+    }
+
+    const height = this.npArt.clientHeight;
+    const stage = this.npArt.clientWidth;
+    if (height < 40 || stage < 40) return;
+
+    const width = Math.min(Math.round((height * 9) / 16), stage - 2 * RAIL_WIDTH);
+    if (width < 40) return;
+
+    this.ytHost.style.left = '50%';
+    this.ytHost.style.right = 'auto';
+    this.ytHost.style.width = width + 'px';
+    this.ytHost.style.marginLeft = Math.round(-width / 2) + 'px';
+
+    const frame = this.ytHost.querySelector('iframe');
+    if (frame) {
+      frame.setAttribute('width', String(width));
+      frame.setAttribute('height', String(height));
+    }
+  }
+
   private openNowPlaying(): void {
     this.np.classList.add('open');
     this.tunePolling();
+    // Once now, and again after the slide-up has settled.
+    this.fitShortsStage();
+    window.requestAnimationFrame(() => this.fitShortsStage());
+    window.setTimeout(() => this.fitShortsStage(), 320);
   }
 
   private closeNowPlaying(): void {
@@ -2051,6 +2098,8 @@ export class App {
     this.updateKeepAwake(this.player.playing);
     this.np.classList.toggle('video', track.sourceId === 'youtube');
     this.np.classList.toggle('shorts', kind === 'short');
+    this.fitShortsStage();
+    window.requestAnimationFrame(() => this.fitShortsStage());
     this.npAdd.hidden = kind === 'short';
 
     this.lastElapsed = '';
@@ -2292,8 +2341,11 @@ export class App {
     }
 
     const current: Surface = this.player.track?.kind === 'short' ? 'short' : 'music';
+    // Strictly within the surface being listened to. Falling back to anything
+    // in the queue meant an empty music queue handed over a Short, and the
+    // player switched to Shorts in the middle of listening to music.
     const sameSurface = this.queueFor(current);
-    const nextUp = sameSurface[0] ?? this.queue.find((r) => !this.hidden.has(r.track.id));
+    const nextUp = sameSurface[0];
     if (nextUp) this.queue.splice(this.queue.indexOf(nextUp), 1);
 
     if (current === 'short' && !this.channelLocked) void this.ensureShorts();
