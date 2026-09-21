@@ -192,6 +192,15 @@ export class App {
   private ambientTimer = 0;
   private lastElapsed = '';
   private lastFillPct = -1;
+  /**
+   * Split timing for a track start. "app" is everything this code does before
+   * the player is handed the video; "player" is from that hand-off until sound
+   * starts. Which of the two is large decides whether there is anything left
+   * worth optimising here or whether the wait is the network.
+   */
+  private startedAt = 0;
+  private handedOffAt = 0;
+  private lastTiming = '';
   /** True while the double-tap has taken the screen down to its floor. */
   private dimmed = false;
   private lastTapAt = 0;
@@ -232,6 +241,15 @@ export class App {
       onProgress: (cur, dur) => this.renderProgress(cur, dur),
       onStateChange: (playing) => {
         this.renderPlayState(playing);
+        if (playing && this.startedAt > 0) {
+          const now = Date.now();
+          const app = (this.handedOffAt || now) - this.startedAt;
+          const player = now - (this.handedOffAt || this.startedAt);
+          this.lastTiming = 'app ' + app + 'ms · player ' + (player / 1000).toFixed(1) + 's';
+          this.startedAt = 0;
+          console.info('start timing:', this.lastTiming);
+          this.setStatus(this.lastTiming);
+        }
         this.updateKeepAwake(playing);
     this.scheduleAmbient();
         // Keyless playlists arrive as bare video ids, so the real title only
@@ -1423,6 +1441,8 @@ export class App {
     add('Model updates', String(this.model.n));
     add('Liked', String(this.likes.size));
     add('Currently exploring', Math.round(epsilon * 100) + '%');
+    if (this.lastTiming) add('Last track start', this.lastTiming);
+    add('Player ready at launch', this.ytEngine.isWarm() ? 'yes' : 'no');
 
     // Only meaningful with a key; the playlist path costs nothing at all.
     if (this.youtube.configured) {
@@ -2122,6 +2142,9 @@ export class App {
       return;
     }
 
+    this.startedAt = Date.now();
+    this.handedOffAt = 0;
+
     // Start the player first. None of the bookkeeping below affects what is
     // about to be loaded, and doing it first put storage work between the tap
     // and the sound.
@@ -2135,6 +2158,7 @@ export class App {
     }
 
     await started;
+    this.handedOffAt = Date.now();
     this.renderHome();
   }
 

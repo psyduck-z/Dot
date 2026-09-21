@@ -141,6 +141,11 @@ export class YouTubeEngine implements PlaybackEngine {
    * inside the Now Playing overlay, which sits translated off-screen until
    * opened. Nothing is shown.
    */
+  /** Whether the player finished building before it was first needed. */
+  isWarm(): boolean {
+    return this.player !== null;
+  }
+
   prewarm(): void {
     this.host.hidden = false;
     void this.ensurePlayer().catch(() => {
