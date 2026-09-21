@@ -1,5 +1,5 @@
 {
-  "version": "4e77cc0",
+  "version": "067b455",
   "bundle": "bundle.js",
-  "notes": "Size the Shorts player to the video instead of stretching it"
+  "notes": "Blurred backdrop behind Shorts, and one row of controls"
 }
