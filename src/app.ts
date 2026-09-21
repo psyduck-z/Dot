@@ -520,9 +520,7 @@ export class App {
     const main = el('div', 'row-main');
     main.appendChild(el('span', 'row-title', ranked.track.title));
 
-    const subParts = [ranked.track.artist];
-    if (ranked.track.isLive) subParts.push('Live');
-    main.appendChild(el('span', 'row-sub', subParts.join(' · ')));
+    main.appendChild(el('span', 'row-sub', ranked.track.artist));
     row.appendChild(main);
 
     row.addEventListener('click', () => {
@@ -1193,10 +1191,10 @@ export class App {
 
     this.npTitle.textContent = track.title;
     this.npArtist.textContent = track.artist;
-    this.npTotal.textContent = track.isLive ? 'live' : formatTime(track.duration);
+    this.npTotal.textContent = formatTime(track.duration);
     this.npSource.textContent =
       this.sources.find((s) => s.id === track.sourceId)?.displayName ?? track.sourceId;
-    paintArt(this.npArtImg, track.artworkUrl, track.title, track.isLive ? '📻' : '♪');
+    paintArt(this.npArtImg, track.artworkUrl, track.title, '♪');
 
     // A video source needs a 16:9 stage; artwork-only tracks keep the square.
     const kind = track.kind ?? 'video';
@@ -1230,15 +1228,7 @@ export class App {
   }
 
   private renderProgress(current: number, duration: number): void {
-    const live = this.player.track?.isLive === true;
     this.npElapsed.textContent = formatTime(current);
-
-    if (live) {
-      this.npTotal.textContent = 'live';
-      this.npFill.style.width = '100%';
-      this.miniProgress.style.width = '100%';
-      return;
-    }
     if (duration > 0) {
       this.npTotal.textContent = formatTime(duration);
       const pct = Math.min(100, (current / duration) * 100);

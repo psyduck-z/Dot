@@ -198,10 +198,6 @@ export function hideTrack(id: TrackId): Set<TrackId> {
   return hidden;
 }
 
-export function unhideAll(): void {
-  write(KEY.hidden, []);
-}
-
 export function loadPlaylists(): Playlist[] {
   return read<Playlist[]>(KEY.playlists, []);
 }
@@ -241,15 +237,6 @@ export function addToPlaylist(id: string, track: Track): boolean {
   playlist.updatedAt = Date.now();
   savePlaylists(all);
   return true;
-}
-
-export function removeFromPlaylist(id: string, trackId: TrackId): void {
-  const all = loadPlaylists();
-  const playlist = all.find((p) => p.id === id);
-  if (!playlist) return;
-  playlist.tracks = playlist.tracks.filter((t) => t.id !== trackId);
-  playlist.updatedAt = Date.now();
-  savePlaylists(all);
 }
 
 /** The free YouTube Data API allowance, per project, per day. */

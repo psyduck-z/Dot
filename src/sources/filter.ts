@@ -438,7 +438,7 @@ export function musicScore(input: FilterInput): number {
   return score;
 }
 
-export function looksMusical(input: FilterInput): boolean {
+function looksMusical(input: FilterInput): boolean {
   const text = normalize(input.title + ' ' + input.artist + ' ' + (input.tags ?? []).join(' '));
   return MUSIC_SIGNALS.some((s) => text.indexOf(s.match) >= 0);
 }

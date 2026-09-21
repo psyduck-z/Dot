@@ -19,7 +19,7 @@
 import * as store from '../store.ts';
 import { blockReason } from './filter.ts';
 import { classifyKind, parseEmbedAspect } from './kind.ts';
-import type { BrowseKind, MusicSource, SourceCapabilities, Track, TrackId } from '../types.ts';
+import type { BrowseKind, MusicSource, Track, TrackId } from '../types.ts';
 
 const API = 'https://www.googleapis.com/youtube/v3';
 /** Category 10 is Music. Keeps podcasts and vlogs out of a music feed. */
@@ -165,14 +165,6 @@ function toTrack(video: YtVideo): Track | null {
 export class YouTubeSource implements MusicSource {
   readonly id = 'youtube';
   readonly displayName = 'YouTube';
-  readonly capabilities: SourceCapabilities = {
-    search: true,
-    onDemand: true,
-    // Playback is through Google's embedded player, so nothing is downloadable.
-    downloadable: false,
-    browse: true,
-  };
-
   /**
    * Locally known videos, keyed by track id. Without the Data API this is the
    * entire catalogue: it grows from the playlists you add and fills in real

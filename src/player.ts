@@ -16,9 +16,6 @@ import { YouTubeEngine } from './playback/youtube.ts';
 import type { PlaybackEngine } from './playback/engine.ts';
 import type { PlayEvent, PlayOutcome, Track } from './types.ts';
 
-/** How long counts as "a full listen" for a live stream, which has no end. */
-const LIVE_REFERENCE_SECONDS = 180;
-
 export interface PlayerListener {
   onTrackChange?(track: Track | null): void;
   onProgress?(currentSeconds: number, durationSeconds: number): void;
@@ -81,15 +78,7 @@ export class Player {
     return track.sourceId === 'youtube' ? this.youtube : this.html;
   }
 
-  /**
-   * Live streams have no duration, so a naive fraction would be 0 and every
-   * station would train as a maximally strong negative the moment it was
-   * skipped. Measure engagement against a reference listen instead.
-   */
   private playedFraction(): number {
-    if (this.current?.isLive) {
-      return Math.min(1, this.engine.currentTime() / LIVE_REFERENCE_SECONDS);
-    }
     const duration = this.engine.duration();
     if (!duration) return 0;
     const f = this.engine.currentTime() / duration;

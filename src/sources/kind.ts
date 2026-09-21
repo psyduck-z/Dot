@@ -23,7 +23,7 @@ import { musicScore, type FilterInput } from './filter.ts';
 export type TrackKind = 'music' | 'short' | 'video';
 
 /** YouTube's Music category. */
-export const MUSIC_CATEGORY_ID = '10';
+const MUSIC_CATEGORY_ID = '10';
 
 /** The current Shorts ceiling. It was 60s until 2024. */
 const SHORT_MAX_SECONDS = 180;

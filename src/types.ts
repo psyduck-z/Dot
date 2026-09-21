@@ -31,8 +31,6 @@ export interface Track {
   /** Source-reported popularity, if any. Treated as a weak, bucketed signal only. */
   playCount?: number;
   releaseYear?: number;
-  /** True for live streams, which cannot be seeked and never "complete". */
-  isLive?: boolean;
   /**
    * The source platform's own "this is children's content" designation, when
    * it reports one. Carried on the track so cached results can still be
@@ -46,16 +44,6 @@ export interface Track {
   kind?: 'music' | 'short' | 'video';
 }
 
-export interface SourceCapabilities {
-  search: boolean;
-  /** Can return arbitrary tracks on demand, rather than only a live stream. */
-  onDemand: boolean;
-  /** Can produce a stable URL suitable for caching to disk. */
-  downloadable: boolean;
-  /** Supports browsing by tag or genre without a text query. */
-  browse: boolean;
-}
-
 /**
  * The pluggable audio backend.
  *
@@ -66,7 +54,6 @@ export interface SourceCapabilities {
 export interface MusicSource {
   readonly id: string;
   readonly displayName: string;
-  readonly capabilities: SourceCapabilities;
 
   search(query: string, limit?: number): Promise<Track[]>;
   getTrack(id: TrackId): Promise<Track | null>;
@@ -79,7 +66,6 @@ export interface MusicSource {
 
   /** Candidate generation for the endless queue. */
   browse?(kind: BrowseKind, key?: string, limit?: number): Promise<Track[]>;
-  getSimilar?(id: TrackId, limit?: number): Promise<Track[]>;
 }
 
 export type BrowseKind = 'trending' | 'tag' | 'genre' | 'artist';
@@ -131,13 +117,9 @@ export interface Prefs {
    */
   musicTags: string[];
   shortsTags: string[];
-  seedArtists: string[];
   /** 0..1. Surfaces the explore/exploit tradeoff directly to the user. */
   discovery: number;
   volume: number;
-  enabledSourceIds: string[];
-  /** Megabytes. 0 disables offline caching. */
-  cacheLimitMb: number;
   /**
    * Google Cloud key for the YouTube Data API. Entirely optional — it only
    * enables live search. Playlist playback needs no key at all.
@@ -157,11 +139,8 @@ export interface Prefs {
 export const DEFAULT_PREFS: Prefs = {
   musicTags: [],
   shortsTags: [],
-  seedArtists: [],
   discovery: 0.2,
   volume: 0.8,
-  enabledSourceIds: [],
-  cacheLimitMb: 256,
   youtubeApiKey: '',
   filterLevel: 'normal',
   captionsEnabled: false,

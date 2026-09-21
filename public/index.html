@@ -40,14 +40,8 @@ html, body {
 }
 
 body {
-  display: -webkit-box;
-  display: -webkit-flex;
   display: flex;
-  -webkit-box-align: center;
-  -webkit-align-items: center;
   align-items: center;
-  -webkit-box-pack: center;
-  -webkit-justify-content: center;
   justify-content: center;
 }
 
@@ -94,11 +88,7 @@ body {
 #app {
   position: relative;
   height: 100%;
-  display: -webkit-box;
-  display: -webkit-flex;
   display: flex;
-  -webkit-box-orient: vertical;
-  -webkit-flex-direction: column;
   flex-direction: column;
   min-height: 0;
   overflow: hidden;
@@ -107,14 +97,11 @@ body {
 /* min-height:0 is what makes this scroll: flex:1 1 auto alone leaves
    min-height:auto, the item grows to fit content, and it gets clipped instead. */
 .panes {
-  -webkit-box-flex: 1;
-  -webkit-flex: 1 1 auto;
   flex: 1 1 auto;
   min-height: 0;
   overflow-y: auto;
   overflow-x: hidden;
   -webkit-overflow-scrolling: touch;
-  background: -webkit-linear-gradient(top, #1c1c1c 0%, #000 220px);
   background: linear-gradient(to bottom, #1c1c1c 0%, #000 220px);
 }
 
@@ -126,8 +113,6 @@ body {
 /* ---------------------------------------------------------------- onboarding */
 
 .onboard {
-  -webkit-box-flex: 1;
-  -webkit-flex: 1 1 auto;
   flex: 1 1 auto;
   min-height: 0;
   overflow-y: auto;
@@ -203,11 +188,7 @@ body {
 .list { margin: 0; }
 
 .row {
-  display: -webkit-box;
-  display: -webkit-flex;
   display: flex;
-  -webkit-box-align: center;
-  -webkit-align-items: center;
   align-items: center;
   width: 100%;
   min-height: 56px;
@@ -222,7 +203,6 @@ body {
 .row:active { background: #141414; }
 
 .row-art {
-  -webkit-flex: 0 0 auto;
   flex: 0 0 auto;
   width: 46px;
   height: 46px;
@@ -237,14 +217,11 @@ body {
   color: rgba(255, 255, 255, 0.55);
 }
 .row-art-liked {
-  background: -webkit-linear-gradient(top left, #1fd18c, #0b6b53);
   background: linear-gradient(135deg, #1fd18c, #0b6b53);
   color: #fff;
 }
 
 .row-main {
-  -webkit-box-flex: 1;
-  -webkit-flex: 1 1 auto;
   flex: 1 1 auto;
   min-width: 0;
 }
@@ -290,7 +267,6 @@ body {
 }
 .tile:nth-child(2n) { margin-right: 0; }
 .tile.on { -webkit-box-shadow: inset 0 0 0 2px #1fd18c; box-shadow: inset 0 0 0 2px #1fd18c; }
-.tile-sm { height: 48px; font-size: 12px; }
 
 /* Tag chips. Twenty-eight tags as two-up tiles ran to fourteen rows — most of a
    screen of scrolling to reach the slider below them. Chips size to their own
@@ -319,7 +295,6 @@ body {
 }
 .chip.on {
   opacity: 1;
-  -webkit-box-shadow: inset 0 0 0 2px #1fd18c;
   box-shadow: inset 0 0 0 2px #1fd18c;
 }
 
@@ -344,11 +319,7 @@ body {
 
 .stats { margin: 4px 0 16px; }
 .stat {
-  display: -webkit-box;
-  display: -webkit-flex;
   display: flex;
-  -webkit-box-pack: justify;
-  -webkit-justify-content: space-between;
   justify-content: space-between;
   padding: 7px 0;
   border-bottom: 1px solid #1c1c1c;
@@ -393,8 +364,6 @@ body {
 
 /* Three-way filter strength control. */
 .segment {
-  display: -webkit-box;
-  display: -webkit-flex;
   display: flex;
   margin: 4px 0 14px;
   padding: 3px;
@@ -404,8 +373,6 @@ body {
   overflow: hidden;
 }
 .seg {
-  -webkit-box-flex: 1;
-  -webkit-flex: 1 1 0;
   flex: 1 1 0;
   min-height: 38px;
   border: 0;
@@ -458,14 +425,9 @@ body {
 /* -------------------------------------------------------------- mini player */
 
 .mini {
-  -webkit-flex: 0 0 auto;
   flex: 0 0 auto;
   position: relative;
-  display: -webkit-box;
-  display: -webkit-flex;
   display: flex;
-  -webkit-box-align: center;
-  -webkit-align-items: center;
   align-items: center;
   margin: 0 8px 4px;
   padding: 7px 8px;
@@ -475,14 +437,8 @@ body {
 }
 
 .mini-tap {
-  -webkit-box-flex: 1;
-  -webkit-flex: 1 1 auto;
   flex: 1 1 auto;
-  display: -webkit-box;
-  display: -webkit-flex;
   display: flex;
-  -webkit-box-align: center;
-  -webkit-align-items: center;
   align-items: center;
   min-width: 0;
   min-height: 40px;
@@ -495,7 +451,6 @@ body {
   cursor: pointer;
 }
 .mini-art {
-  -webkit-flex: 0 0 auto;
   flex: 0 0 auto;
   width: 38px;
   height: 38px;
@@ -526,7 +481,6 @@ body {
   text-overflow: ellipsis;
 }
 .mini-btn {
-  -webkit-flex: 0 0 auto;
   flex: 0 0 auto;
   width: 44px;
   height: 44px;
@@ -551,17 +505,12 @@ body {
 /* ------------------------------------------------------------------- tabbar */
 
 .tabbar {
-  -webkit-flex: 0 0 auto;
   flex: 0 0 auto;
-  display: -webkit-box;
-  display: -webkit-flex;
   display: flex;
   background: #000;
   padding-bottom: env(safe-area-inset-bottom, 0px);
 }
 .tab {
-  -webkit-box-flex: 1;
-  -webkit-flex: 1 1 0;
   flex: 1 1 0;
   min-height: 50px;
   padding: 5px 0 7px;
@@ -589,29 +538,19 @@ body {
   z-index: 20;
   padding: 0 22px calc(20px + env(safe-area-inset-bottom, 0px));
   padding-top: calc(10px + env(safe-area-inset-top, 0px));
-  background: -webkit-linear-gradient(top, #3a3a3a 0%, #0a0a0a 60%, #000 100%);
   background: linear-gradient(to bottom, #3a3a3a 0%, #0a0a0a 60%, #000 100%);
   overflow-y: auto;
   -webkit-overflow-scrolling: touch;
-  -webkit-transform: translate3d(0, 100%, 0);
   transform: translate3d(0, 100%, 0);
-  -webkit-transition: -webkit-transform 0.26s ease;
   transition: transform 0.26s ease;
 }
 .np.open {
-  -webkit-transform: translate3d(0, 0, 0);
   transform: translate3d(0, 0, 0);
 }
 
 .np-head {
-  display: -webkit-box;
-  display: -webkit-flex;
   display: flex;
-  -webkit-box-align: center;
-  -webkit-align-items: center;
   align-items: center;
-  -webkit-box-pack: justify;
-  -webkit-justify-content: space-between;
   justify-content: space-between;
   margin-bottom: 8px;
 }
@@ -729,11 +668,7 @@ body {
 .np-fill { width: 0; height: 100%; background: #fff; }
 
 .np-times {
-  display: -webkit-box;
-  display: -webkit-flex;
   display: flex;
-  -webkit-box-pack: justify;
-  -webkit-justify-content: space-between;
   justify-content: space-between;
   color: #a7a7a7;
   font-size: 11px;
@@ -741,14 +676,8 @@ body {
 }
 
 .np-controls {
-  display: -webkit-box;
-  display: -webkit-flex;
   display: flex;
-  -webkit-box-align: center;
-  -webkit-align-items: center;
   align-items: center;
-  -webkit-box-pack: center;
-  -webkit-justify-content: space-between;
   justify-content: space-between;
   margin-top: 14px;
 }
@@ -821,7 +750,6 @@ body {
   right: 0;
   bottom: 0;
   height: 42%;
-  background: -webkit-linear-gradient(top, rgba(0,0,0,0), rgba(0,0,0,0.55));
   background: linear-gradient(to bottom, rgba(0,0,0,0), rgba(0,0,0,0.55));
 }
 
@@ -829,24 +757,17 @@ body {
    Flex rather than a fixed ratio, because a 9:16 box at this width would be
    taller than the screen. */
 .np.shorts {
-  display: -webkit-box;
-  display: -webkit-flex;
   display: flex;
-  -webkit-box-orient: vertical;
-  -webkit-flex-direction: column;
   flex-direction: column;
   padding-left: 0;
   padding-right: 0;
   overflow: hidden;
 }
 .np.shorts .np-head {
-  -webkit-flex: 0 0 auto;
   flex: 0 0 auto;
   margin: 0 16px 4px;
 }
 .np.shorts .np-art {
-  -webkit-box-flex: 1;
-  -webkit-flex: 1 1 auto;
   flex: 1 1 auto;
   min-height: 0;
   width: 100%;
@@ -898,7 +819,6 @@ body {
 
 .np-status { display: none; }
 .np.shorts .np-controls {
-  -webkit-flex: 0 0 auto;
   flex: 0 0 auto;
   margin: 6px 16px 0;
 }
@@ -913,7 +833,6 @@ body {
    draws its own title, share and logo, and covering those is not something
    this app does. */
 .np.shorts .np-head {
-  -webkit-flex: 0 0 auto;
   flex: 0 0 auto;
   margin: 0 8px;
   min-height: 32px;
