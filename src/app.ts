@@ -201,6 +201,7 @@ export class App {
   private startedAt = 0;
   private handedOffAt = 0;
   private lastTiming = '';
+  private timingLine?: HTMLElement;
   /** True while the double-tap has taken the screen down to its floor. */
   private dimmed = false;
   private lastTapAt = 0;
@@ -249,6 +250,7 @@ export class App {
           this.startedAt = 0;
           console.info('start timing:', this.lastTiming);
           this.setStatus(this.lastTiming);
+          this.paintTiming();
         }
         this.updateKeepAwake(playing);
     this.scheduleAmbient();
@@ -1091,6 +1093,13 @@ export class App {
   private buildSettings(host: HTMLElement): void {
     host.appendChild(el('h1', 'greeting', 'Settings'));
 
+    // Above the collapsed sections, so it is readable without opening
+    // anything. This is the number that says whether a slow start is this
+    // app's fault or the network's.
+    this.timingLine = el('p', 'muted');
+    this.paintTiming();
+    host.appendChild(this.timingLine);
+
     host.appendChild(el('h2', 'shelf-title', 'Discovery'));
     host.appendChild(
       el('p', 'muted', 'How often Dot takes a risk instead of playing it safe.'),
@@ -1888,8 +1897,23 @@ export class App {
       this.lastTapAt = now;
     };
 
-    this.np.addEventListener('touchend', (e: TouchEvent) => onTap(e.target), { passive: true });
-    this.np.addEventListener('click', (e: MouseEvent) => onTap(e.target));
+    // A touchscreen fires touchend and then a synthesised click for the same
+    // tap. Counting both made one tap look like a double-tap, and a real
+    // double-tap toggle twice back to where it started — which is why this
+    // appeared to do nothing at all.
+    let lastTouchAt = 0;
+    this.np.addEventListener(
+      'touchend',
+      (e: TouchEvent) => {
+        lastTouchAt = Date.now();
+        onTap(e.target);
+      },
+      { passive: true },
+    );
+    this.np.addEventListener('click', (e: MouseEvent) => {
+      if (Date.now() - lastTouchAt < 700) return;
+      onTap(e.target);
+    });
   }
 
   /**
@@ -1899,6 +1923,14 @@ export class App {
    * music spends most of its time — so the player stops being asked at all
    * rather than twice a second for a number nobody reads.
    */
+  private paintTiming(): void {
+    if (!this.timingLine) return;
+    const warm = this.ytEngine.isWarm() ? 'ready' : 'not ready';
+    this.timingLine.textContent = this.lastTiming
+      ? 'Last start: ' + this.lastTiming + ' · player ' + warm + ' at launch'
+      : 'Play something, then come back for the start timing.';
+  }
+
   private tunePolling(): void {
     const npOpen = this.np.classList.contains('open');
     const ambient = this.np.classList.contains('ambient');
