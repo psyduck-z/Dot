@@ -673,8 +673,8 @@ body {
      own edges puts it in the right place by construction, whatever that
      width turns out to be. */
   box-shadow:
-    0 0 64px 16px rgba(255, 255, 255, 0.18),
-    0 0 18px 2px rgba(255, 255, 255, 0.12);
+    0 0 90px 30px rgba(255, 255, 255, 0.30),
+    0 0 26px 6px rgba(255, 255, 255, 0.22);
 }
 /* Back and forward, living in the letterbox either side of a vertical Short.
 
@@ -922,9 +922,14 @@ body {
 .np-hide-icon { display: none; }
 .np.shorts .np-hide-icon { display: block; }
 .np.shorts .np-hide { display: none; }
-/* Tap the video to play or pause; the player handles that itself. */
-.np.shorts .np-main,
-.np.shorts .np-next { display: none; }
+/* Tap the video to play or pause; the player handles that itself.
+
+   Scoped through .np-controls on purpose. These elements also carry .np-ctl,
+   so a plain ".np.shorts .np-ctl" rule anywhere below would tie on specificity
+   and win on order — which is exactly how they came back once already. The
+   extra class puts this beyond reach of ordering. */
+.np.shorts .np-controls .np-main,
+.np.shorts .np-controls .np-next { display: none; }
 /* Labelled in Shorts, where there is no other context to work out what a
    lone glyph means. The label is generated content, so updating the button's
    text to swap a heart for a filled one leaves it alone. */

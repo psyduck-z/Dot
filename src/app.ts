@@ -189,7 +189,7 @@ export class App {
         if (playing) void this.captureYouTubeMetadata();
       },
       onPlayEvent: (event) => this.recordEvent(event),
-      onError: (message) => this.setStatus(message),
+      onError: (message) => this.setStatus(message + ' — skipping'),
       onTrackChange: (track) => this.renderTrack(track),
     });
   }
@@ -1638,6 +1638,17 @@ export class App {
     this.model.update(featurize(track, event.contextBucket), labelFor(event));
     store.saveModel(this.model);
     store.appendEvent(event);
+
+    // Some uploads cannot be played outside YouTube at all, which the player
+    // reports as an error and then sits on a dead screen. Move past it, and
+    // remember it so the same one is never queued again. Deliberately not
+    // trained on: a video that refused to load says nothing about taste.
+    if (event.outcome === 'error') {
+      this.hidden = store.hideTrack(track.id);
+      this.queue = this.queue.filter((r) => r.track.id !== track.id);
+      void this.next('skipped');
+      return;
+    }
 
     // An early skip says the feed is off; anything else says it is not.
     if (event.outcome === 'skipped' && event.playedFraction < 0.5) this.skipStreak++;
