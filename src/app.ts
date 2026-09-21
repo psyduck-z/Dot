@@ -124,6 +124,8 @@ export class App {
 
   /** Two surfaces. Anything classified as a plain video never reaches the UI. */
   private surface: Surface = 'music';
+  private searchScope: 'all' | Surface = 'all';
+  private searchResults: RankedTrack[] = [];
   private surfaceTabs = new Map<Surface, HTMLButtonElement>();
   private homeBody!: HTMLElement;
   private hidden: Set<TrackId> = store.loadHidden();
@@ -449,10 +451,30 @@ export class App {
     const input = el('input', 'search-input');
     input.type = 'search';
     input.id = 'dot-search';
-    input.placeholder = 'Songs, stations, tags';
+    input.placeholder = 'Song, tag, or @channel';
     input.autocomplete = 'off';
     form.appendChild(input);
     host.appendChild(form);
+
+    const scopes: Array<['all' | Surface, string]> = [
+      ['all', 'All'],
+      ['music', 'Music'],
+      ['short', 'Shorts'],
+    ];
+    const scopeBar = el('div', 'segment');
+    const scopeButtons = new Map<string, HTMLButtonElement>();
+    for (const [scope, label] of scopes) {
+      const chip = button('seg', label);
+      if (scope === this.searchScope) chip.classList.add('on');
+      chip.addEventListener('click', () => {
+        this.searchScope = scope;
+        for (const [key, node] of scopeButtons) node.classList.toggle('on', key === scope);
+        this.paintSearchResults(results);
+      });
+      scopeButtons.set(scope, chip);
+      scopeBar.appendChild(chip);
+    }
+    host.appendChild(scopeBar);
 
     const results = el('div', 'list');
     host.appendChild(results);
@@ -491,7 +513,13 @@ export class App {
     clear(results);
     results.appendChild(el('p', 'empty', 'Searching…'));
 
-    const found = await this.fromAllSources((s) => s.search(query, 12));
+    // A leading @ means a channel. Listing a channel's own uploads costs three
+    // quota units where searching costs a hundred, and returns the channel's
+    // full catalogue in order rather than whatever a search surfaces.
+    const handle = query.trim();
+    const found = handle.startsWith('@')
+      ? await this.youtube.channelUploads(handle, 50)
+      : await this.fromAllSources((s) => s.search(query, 40));
     clear(results);
 
     if (found.length === 0) {
@@ -507,7 +535,30 @@ export class App {
       .map((track) => ({ track, score: this.model.score(featurize(track, bucket)), explored: false }))
       .sort((a, b) => b.score - a.score);
 
-    for (const item of ranked) results.appendChild(this.row(item));
+    this.searchResults = ranked;
+    this.paintSearchResults(results);
+  }
+
+  /**
+   * Draws whichever slice of the last search the scope chips are asking for.
+   * Filtering here rather than at the request means switching scope is free —
+   * one search already paid for every kind it returned.
+   */
+  private paintSearchResults(results: HTMLElement): void {
+    clear(results);
+
+    const shown =
+      this.searchScope === 'all'
+        ? this.searchResults
+        : this.searchResults.filter((r) => (r.track.kind ?? 'music') === this.searchScope);
+
+    if (shown.length === 0) {
+      results.appendChild(
+        el('p', 'empty', this.searchResults.length === 0 ? 'Nothing found.' : 'Nothing of that kind.'),
+      );
+      return;
+    }
+    for (const item of shown) results.appendChild(this.row(item));
   }
 
   private row(ranked: RankedTrack): HTMLElement {

@@ -417,6 +417,48 @@ export class YouTubeSource implements MusicSource {
     return this.applyFilter(tracks).slice(0, limit);
   }
 
+/**
+   * Everything a channel has uploaded, by @handle.
+   *
+   * Costs three quota units against search.list's hundred: one to turn the
+   * handle into the channel's uploads playlist, one to page that playlist, one
+   * to hydrate the ids. Worth the extra hop — a channel's own upload list is
+   * also complete and in order, which a search over the same channel is not.
+   */
+  async channelUploads(handle: string, limit = 50): Promise<Track[]> {
+    if (!this.configured) return [];
+    const name = handle.replace(/^@/, '').trim();
+    if (!name) return [];
+
+    const cacheKey = 'yt.ch.' + name.toLowerCase();
+    const cached = store.cacheGet<Track[]>(cacheKey, SEARCH_TTL_MS);
+    if (cached) return this.applyFilter(cached).slice(0, limit);
+
+    const channel = await this.getJson(
+      '/channels?part=contentDetails&forHandle=@' + encodeURIComponent(name),
+      COST_LIST,
+    );
+    const uploads = (
+      channel as { items?: Array<{ contentDetails?: { relatedPlaylists?: { uploads?: string } } }> } | null
+    )?.items?.[0]?.contentDetails?.relatedPlaylists?.uploads;
+    if (!uploads) return [];
+
+    const page = await this.getJson(
+      '/playlistItems?part=contentDetails&maxResults=50&playlistId=' + encodeURIComponent(uploads),
+      COST_LIST,
+    );
+    const ids = (
+      page as { items?: Array<{ contentDetails?: { videoId?: string } }> } | null
+    )?.items
+      ?.map((i) => i.contentDetails?.videoId)
+      .filter((id): id is string => typeof id === 'string') ?? [];
+    if (ids.length === 0) return [];
+
+    const tracks = await this.hydrate(ids);
+    if (tracks.length > 0) store.cacheSet(cacheKey, tracks);
+    return this.applyFilter(tracks).slice(0, limit);
+  }
+
   async getTrack(id: TrackId): Promise<Track | null> {
     if (!this.configured) return this.catalog[id] ?? null;
     const tracks = await this.hydrate([videoIdOf(id)]);
