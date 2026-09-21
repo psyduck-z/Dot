@@ -450,9 +450,7 @@ export class App {
           el(
             'p',
             'empty',
-            this.shortsSearched
-              ? 'No Shorts found yet.'
-              : 'Looking for Shorts…',
+            this.shortsSearched ? this.emptyTextFor() : 'Looking for Shorts…',
           ),
         );
         if (this.shortsSearched && !this.refilling) this.homeBody.appendChild(this.retryButton());
@@ -472,7 +470,22 @@ export class App {
 
     this.homeBody.appendChild(el('h2', 'shelf-title', 'Made for you'));
     this.homeBody.appendChild(this.verticalList(items.slice(0, 20), this.emptyTextFor()));
-    if (items.length === 0 && !this.refilling) this.homeBody.appendChild(this.retryButton());
+    if (items.length === 0 && !this.refilling) {
+      if (this.youtube.configured) {
+        const used = store.quotaUsed();
+        this.homeBody.appendChild(
+          el(
+            'p',
+            'empty',
+            'API quota used today: ' +
+              used.toLocaleString() +
+              ' of ' +
+              store.YOUTUBE_DAILY_QUOTA.toLocaleString(),
+          ),
+        );
+      }
+      this.homeBody.appendChild(this.retryButton());
+    }
 
     const recent = store
       .loadRecent()
@@ -494,9 +507,26 @@ export class App {
     return list;
   }
 
+  /**
+   * Why the surface is empty, not just that it is.
+   *
+   * The API reports quota exhaustion and key problems, and the feed was
+   * swallowing all of it — only search ever showed these, so an empty Home
+   * looked identical whether the key was out of quota, misconfigured, or the
+   * search genuinely returned nothing.
+   */
   private emptyTextFor(): string {
     if (!this.youtube.configured) return 'Add a YouTube key in Settings to fill this.';
-    return this.refilling ? 'Finding music…' : 'Nothing here yet.';
+    if (this.refilling) return 'Finding music…';
+
+    const problem = this.youtube.lastKeyProblem;
+    if (problem) return problem;
+
+    const used = store.quotaUsed();
+    if (used >= store.YOUTUBE_DAILY_QUOTA) {
+      return 'Out of API quota for today. It resets at midnight Pacific.';
+    }
+    return 'Nothing here yet.';
   }
 
   /** Shown with an empty surface, since the automatic attempt only runs once. */
