@@ -22,6 +22,26 @@
 const TICK_MS = 800;
 const RELAY_PORT = 5175;
 
+/**
+ * Last known state of the link, for Settings to show.
+ *
+ * Mirroring that fails quietly is worse than no mirroring: a watch that cannot
+ * reach the relay looks exactly like one that was never pointed at it.
+ */
+export interface MirrorStatus {
+  active: boolean;
+  relay: string;
+  lastOkAt: number;
+  lastError: string;
+  sent: number;
+}
+
+const status: MirrorStatus = { active: false, relay: '', lastOkAt: 0, lastError: '', sent: 0 };
+
+export function mirrorStatus(): MirrorStatus {
+  return status;
+}
+
 /** Replaced in the snapshot: cross-origin, unserializable, and large. */
 function stripFrames(root: HTMLElement): string {
   const clone = root.cloneNode(true) as HTMLElement;
@@ -61,6 +81,8 @@ export function startMirror(): void {
   if (location.protocol !== 'http:') return;
 
   const relay = 'http://' + location.hostname + ':' + RELAY_PORT;
+  status.active = true;
+  status.relay = relay;
   let previous = '';
   let busy = false;
 
@@ -120,12 +142,17 @@ export function startMirror(): void {
           ts: Date.now(),
         }),
       });
+      status.lastOkAt = Date.now();
+      status.lastError = '';
+      status.sent++;
       const reply = (await res.json()) as { commands?: unknown[] };
       for (const command of reply.commands ?? []) apply(command as { click?: string; text?: string });
       // A command changes the screen, so the next tick must send it.
       if ((reply.commands ?? []).length > 0) previous = '';
-    } catch {
-      // The relay not being up is the normal case, not an error worth showing.
+    } catch (e) {
+      // Not shown as an error anywhere prominent — the relay being down is the
+      // normal case — but recorded so Settings can say so when asked.
+      status.lastError = e instanceof Error ? e.message : String(e);
     } finally {
       busy = false;
     }

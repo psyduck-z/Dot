@@ -17,6 +17,7 @@ import { TasteModel, labelFor } from './reco/model.ts';
 import { buildQueue, exploreRate, type RankedTrack } from './reco/queue.ts';
 import { contextBucket, featurize, hashKey, normalizeTag } from './reco/features.ts';
 import * as store from './store.ts';
+import { mirrorStatus } from './remote.ts';
 import {
   checkForUpdate,
   isRunningDownloaded,
@@ -208,6 +209,10 @@ declare global {
       webViewInfo?(): string;
       setDevServer?(url: string): void;
       getDevServer?(): string;
+      lastDevFailure?(): string;
+      clearDevFailure?(): void;
+      probeDevServer?(url: string): void;
+      probeStatus?(): string;
     };
   }
 }
@@ -319,6 +324,8 @@ export class App {
    * worth optimising here or whether the wait is the network.
    */
   private startedAt = 0;
+  /** Repaints the mirror status line while Settings is open. */
+  private devTimer = 0;
   private handedOffAt = 0;
   private lastTiming = '';
   private timingLine?: HTMLElement;
@@ -1243,9 +1250,53 @@ export class App {
    */
   private buildDevServer(host: HTMLElement): void {
     const native = window.DotNative;
-    if (!native?.setDevServer || !native.getDevServer) return;
+    const mirror = mirrorStatus();
+    // Nothing to say in a plain browser that is not mirroring either.
+    if (!native?.setDevServer && !mirror.active) return;
 
     host.appendChild(el('h2', 'shelf-title', 'Development'));
+
+    // The first question is always "is it even loading from the laptop", and
+    // until now the only way to answer it was to guess from how the app felt.
+    const from = location.protocol === 'http:' ? location.origin : 'the installed copy';
+    host.appendChild(el('p', 'muted', 'Running from: ' + from));
+
+    // A load that failed used to revert in silence, which looks identical to
+    // never having been asked. Say what went wrong and when.
+    const failure = native?.lastDevFailure?.() ?? '';
+    if (failure) {
+      const note = el('p', 'muted', 'Last attempt failed: ' + failure);
+      host.appendChild(note);
+      const dismiss = button('toggle', 'Clear that');
+      dismiss.addEventListener('click', () => {
+        native?.clearDevFailure?.();
+        note.textContent = '';
+        dismiss.hidden = true;
+      });
+      host.appendChild(dismiss);
+    }
+
+    const live = el('p', 'muted', '');
+    host.appendChild(live);
+    const paint = (): void => {
+      const m = mirrorStatus();
+      if (!m.active) {
+        live.textContent = 'Mirroring: off (only runs when loaded from a dev server).';
+        return;
+      }
+      const ago = m.lastOkAt ? Math.round((Date.now() - m.lastOkAt) / 1000) : null;
+      live.textContent =
+        ago === null
+          ? 'Mirroring: no reply yet from ' + m.relay + (m.lastError ? ' — ' + m.lastError : '')
+          : 'Mirroring: ' + m.sent + ' sent, last ' + ago + 's ago → ' + m.relay;
+    };
+    paint();
+    // Cleared whenever Settings is rebuilt, so it cannot outlive the element.
+    window.clearInterval(this.devTimer);
+    this.devTimer = window.setInterval(paint, 1000);
+
+    if (!native?.setDevServer || !native.getDevServer) return;
+
     host.appendChild(
       el('p', 'muted', 'Load Dot from a computer on this network instead of from the watch. Blank uses the installed copy.'),
     );
@@ -1257,6 +1308,33 @@ export class App {
     host.appendChild(field);
 
     const state = el('p', 'muted', '');
+
+    // Answers "is that address reachable from here" before committing to a
+    // restart. The page cannot ask this itself — from appassets it is an HTTPS
+    // page and a plain-HTTP request on the LAN is blocked as mixed content —
+    // so the shell asks on its behalf.
+    const test = button('toggle', 'Test connection');
+    test.addEventListener('click', () => {
+      const target = field.value.trim();
+      if (!target) {
+        state.textContent = 'Enter an address first.';
+        return;
+      }
+      state.textContent = 'Testing ' + target + ' …';
+      native.probeDevServer?.(target);
+      let waited = 0;
+      const poll = window.setInterval(() => {
+        const result = native.probeStatus?.() ?? '';
+        waited += 300;
+        if (!result && waited < 6000) return;
+        window.clearInterval(poll);
+        if (!result) state.textContent = 'No answer after 6s — treat that as unreachable.';
+        else if (result.indexOf('ok') === 0) state.textContent = 'Reachable. Save and reopen Dot to use it.';
+        else state.textContent = 'Could not reach it: ' + result;
+      }, 300);
+    });
+    host.appendChild(test);
+
     const save = button('toggle', 'Save and restart');
     save.addEventListener('click', () => {
       native.setDevServer?.(field.value);

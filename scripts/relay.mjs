@@ -69,6 +69,14 @@ const server = createServer(async (req, res) => {
     } catch {
       snapshot = { error: 'unparseable snapshot', raw: raw.slice(0, 200) };
     }
+    // A gap means this is a device arriving rather than one already talking,
+    // and that is the event worth seeing in the log — "is it connected yet" was
+    // otherwise only answerable by refreshing a page and squinting at a number.
+    const gap = Date.now() - lastSeen;
+    if (!lastSeen || gap > 10_000) {
+      const who = req.socket.remoteAddress ?? 'unknown';
+      console.log(`  * connected  ${who}  ${snapshot?.width ?? '?'}x${snapshot?.height ?? '?'}`);
+    }
     received++;
     lastSeen = Date.now();
     // Handing the queue back in the reply is what keeps this to one request.
@@ -97,10 +105,18 @@ const server = createServer(async (req, res) => {
   }
 
   if (url === '/') {
-    const age = lastSeen ? Math.round((Date.now() - lastSeen) / 1000) + 's ago' : 'never';
+    const since = lastSeen ? Date.now() - lastSeen : null;
+    // "Live" is a judgement, and a timestamp is what whoever is asking this
+    // question would have to turn into one themselves. Do it for them.
+    const state =
+      since === null
+        ? 'WAITING - no device has ever connected'
+        : since < 5000
+          ? 'LIVE - a device is mirroring now'
+          : 'STALE - last seen ' + Math.round(since / 1000) + 's ago';
     res.writeHead(200, { 'content-type': 'text/plain' });
     return res.end(
-      `Dot mirror relay\n  snapshots received: ${received}\n  last: ${age}\n  commands queued: ${commands.length}\n`,
+      `Dot mirror relay\n\n  ${state}\n\n  snapshots received: ${received}\n  commands queued: ${commands.length}\n`,
     );
   }
 

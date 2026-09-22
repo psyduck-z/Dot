@@ -17,6 +17,8 @@ import android.app.Activity
 import androidx.webkit.WebViewAssetLoader
 import androidx.webkit.WebViewCompat
 import android.content.Context
+import java.net.HttpURLConnection
+import java.net.URL
 
 /**
  * The whole app is a WebView. The UI, the recommender and the storage all live
@@ -40,6 +42,7 @@ class MainActivity : Activity() {
         /** Where the app lives when it is not pointed at a development machine. */
         const val PACKAGED = "https://appassets.androidplatform.net/assets/index.html"
         const val KEY_DEV_URL = "devUrl"
+        const val KEY_DEV_FAIL = "devFail"
     }
 
     private lateinit var webView: WebView
@@ -95,7 +98,15 @@ class MainActivity : Activity() {
                 ) {
                     if (!request.isForMainFrame) return
                     if (view.url?.startsWith("https://appassets.") == true) return
-                    prefs().edit().remove(KEY_DEV_URL).apply()
+                    // Recorded so the app can say what happened. Falling back
+                    // silently is why a watch that could not reach the laptop
+                    // looked exactly like a watch that had never been told to
+                    // try, which is a bad half-hour for whoever is guessing.
+                    val why = request.url.toString() + " — " + error.description
+                    prefs().edit()
+                        .remove(KEY_DEV_URL)
+                        .putString(KEY_DEV_FAIL, why)
+                        .apply()
                     view.loadUrl(PACKAGED)
                 }
             }
@@ -143,6 +154,9 @@ class MainActivity : Activity() {
     }
 
     private fun prefs() = getSharedPreferences("dot", Context.MODE_PRIVATE)
+
+    /** Result of the most recent reachability probe; empty while it runs. */
+    @Volatile private var probeResult = ""
 
     /**
      * What the web layer can ask the shell for.
@@ -244,6 +258,48 @@ class MainActivity : Activity() {
 
         @JavascriptInterface
         fun getDevServer(): String = prefs().getString(KEY_DEV_URL, "") ?: ""
+
+        /** Why the last attempt to load from a dev server gave up, if it did. */
+        @JavascriptInterface
+        fun lastDevFailure(): String = prefs().getString(KEY_DEV_FAIL, "") ?: ""
+
+        @JavascriptInterface
+        fun clearDevFailure() {
+            prefs().edit().remove(KEY_DEV_FAIL).apply()
+        }
+
+        /**
+         * Asks whether an address is actually reachable, from the watch.
+         *
+         * The page cannot find this out for itself: served from appassets it is
+         * an HTTPS page, and a request to a http:// address on the LAN is mixed
+         * content and blocked before it leaves. The shell has no such problem,
+         * so it makes the request and leaves the answer for the page to collect
+         * — on a background thread, because a synchronous network call from a
+         * bridge method would hang the UI thread and kill the app.
+         */
+        @JavascriptInterface
+        fun probeDevServer(url: String) {
+            probeResult = ""
+            val target = url.trim()
+            Thread {
+                probeResult = try {
+                    val conn = URL(target).openConnection() as HttpURLConnection
+                    conn.connectTimeout = 4000
+                    conn.readTimeout = 4000
+                    conn.requestMethod = "GET"
+                    val code = conn.responseCode
+                    conn.disconnect()
+                    if (code in 200..399) "ok $code" else "http $code"
+                } catch (e: Throwable) {
+                    "fail " + (e.message ?: e.javaClass.simpleName)
+                }
+            }.start()
+        }
+
+        /** Empty while a probe is still in flight. */
+        @JavascriptInterface
+        fun probeStatus(): String = probeResult
 
         @JavascriptInterface
         fun setKeepAwake(on: Boolean) {
