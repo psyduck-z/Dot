@@ -37,6 +37,8 @@ const COST_LIST = 1;
 /** Rotated through so repeated top-ups on one seed fetch different videos. */
 const TOPUP_ANGLES = ['', 'new', 'best', 'viral', 'compilation'];
 const TRENDING_TTL_MS = 60 * 60 * 1000;
+/** Filter verdicts held in memory before the cache is dropped and rebuilt. */
+const FILTER_CACHE_MAX = 2000;
 
 interface YtThumb { url?: string }
 interface YtSnippet {
@@ -288,6 +290,9 @@ export class YouTubeSource implements MusicSource {
       // Keep whatever tags the playlist contributed; they are the taste signal.
       tags: Array.from(new Set([...(existing?.tags ?? []), ...tags])),
     };
+    // The title and tags just changed under an id the filter may already have
+    // judged, so that verdict no longer describes this track.
+    this.forgetFilterVerdict(id);
     this.catalog[id] = merged;
     store.saveYtCatalog(this.catalog);
     return merged;
@@ -376,6 +381,27 @@ export class YouTubeSource implements MusicSource {
    * did nothing to anything already fetched. Cache the raw catalogue, decide
    * what to show on every read.
    */
+  /**
+   * Remembers what the filter decided, keyed by track id and strictness.
+   *
+   * blockReason scans on the order of a hundred phrases over a normalised
+   * string, and applyFilter runs on every cache read — thirteen call sites, all
+   * of which re-judge the same tracks for an answer that only changes when the
+   * setting does. On the watch that scan costs about 40ms per read.
+   *
+   * Keyed by id rather than by the track object on purpose: cacheGet parses the
+   * entry out of localStorage afresh each call, so a cached read hands back new
+   * objects every time and an identity-keyed cache would never once hit.
+   */
+  private filterCache = new Map<string, string | null>();
+
+  /** Drops every level's verdict for one track, after its metadata changes. */
+  private forgetFilterVerdict(id: string): void {
+    for (const key of Array.from(this.filterCache.keys())) {
+      if (key.endsWith('|' + id)) this.filterCache.delete(key);
+    }
+  }
+
   private applyFilter(tracks: Track[]): Track[] {
     const level = store.loadPrefs().filterLevel;
     if (level === 'off') {
@@ -383,17 +409,27 @@ export class YouTubeSource implements MusicSource {
       return tracks;
     }
 
+    // Bounded so a long session cannot grow it without limit. Clearing outright
+    // beats tracking recency: it costs one rebuild, and the catalogue is capped
+    // well below this anyway.
+    if (this.filterCache.size > FILTER_CACHE_MAX) this.filterCache.clear();
+
     const out: Track[] = [];
     for (const track of tracks) {
-      const reason = blockReason(
-        {
-          title: track.title,
-          artist: track.artist,
-          tags: track.tags,
-          madeForKids: track.madeForKids,
-        },
-        level,
-      );
+      const cacheKey = level + '|' + track.id;
+      let reason = this.filterCache.get(cacheKey);
+      if (reason === undefined) {
+        reason = blockReason(
+          {
+            title: track.title,
+            artist: track.artist,
+            tags: track.tags,
+            madeForKids: track.madeForKids,
+          },
+          level,
+        );
+        this.filterCache.set(cacheKey, reason);
+      }
       if (reason) console.info('filtered:', reason, '—', track.title, '·', track.artist);
       else out.push(track);
     }

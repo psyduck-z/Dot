@@ -172,9 +172,7 @@ function run(opts: {
           random: rand,
           previousTags: opts.useContext ? previousTags : undefined,
         })
-      : catalog
-          .filter((t) => !exclude.has(t.id))
-          .sort(() => rand() - 0.5)
+      : shuffle(catalog.filter((t) => !exclude.has(t.id)), rand)
           .slice(0, 10)
           .map((track) => ({ track, score: 0, explored: false }));
 
@@ -213,6 +211,29 @@ function run(opts: {
     finalSatisfaction: satisfaction[satisfaction.length - 1] ?? 0,
     finalNovelty: novelty[novelty.length - 1] ?? 0,
   };
+}
+
+/**
+ * Fisher-Yates, seeded.
+ *
+ * This used to be `.sort(() => rand() - 0.5)`. That is not a consistent
+ * comparison function, and the spec leaves the sort order implementation-defined
+ * when it isn't — so V8 was free to take different paths for the same input, and
+ * it did: the baseline moved depending on which JIT tier the comparator had
+ * reached, to the point that adding a console.log changed the published number
+ * and two different seeds could return bit-identical results. A random baseline
+ * that is not reproducible cannot be a baseline. This is also an unbiased
+ * shuffle, which the comparator trick never was.
+ */
+function shuffle<T>(items: T[], rand: () => number): T[] {
+  const out = items.slice();
+  for (let i = out.length - 1; i > 0; i--) {
+    const j = Math.floor(rand() * (i + 1));
+    const tmp = out[i]!;
+    out[i] = out[j]!;
+    out[j] = tmp;
+  }
+  return out;
 }
 
 function mean(xs: number[]): number {

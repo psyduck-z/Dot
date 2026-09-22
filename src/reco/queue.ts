@@ -118,8 +118,17 @@ export function buildQueue(
   const chosen: RankedTrack[] = [];
   const remaining = pool.slice();
 
+  // Both of these used to be rebuilt from the whole of `chosen` for every
+  // candidate on every pass — slicing a window and re-counting, then
+  // re-collecting every tag. That is fine on a desktop and it is not fine on a
+  // processor thirty times slower, so they are maintained as picks are made.
+  const artistCounts = new Map<string, number>();
+  const usedTags = new Set<string>();
+
   while (chosen.length < options.count && remaining.length > 0) {
-    const eligible = remaining.filter((c) => artistAllowed(c.track, chosen));
+    const eligible = remaining.filter(
+      (c) => (artistCounts.get(artistKey(c.track)) ?? 0) < ARTIST_CAP,
+    );
     // If the artist cap has starved the pool, relax it rather than return short.
     const usable = eligible.length > 0 ? eligible : remaining;
 
@@ -127,7 +136,7 @@ export function buildQueue(
     let explored = false;
 
     if (rand() < epsilon) {
-      pickIndex = indexOfNovelPick(usable, chosen, rand);
+      pickIndex = indexOfNovelPick(usable, usedTags, rand);
       explored = true;
     } else {
       pickIndex = 0; // usable preserves the score ordering
@@ -136,19 +145,22 @@ export function buildQueue(
     const pick = usable[pickIndex]!;
     chosen.push({ ...pick, explored });
     remaining.splice(remaining.indexOf(pick), 1);
+
+    const key = artistKey(pick.track);
+    artistCounts.set(key, (artistCounts.get(key) ?? 0) + 1);
+    for (const tag of tagsOf(pick.track)) usedTags.add(tag);
+
+    // Whatever has just fallen out of the sliding window stops counting.
+    const dropped = chosen[chosen.length - 1 - ARTIST_WINDOW];
+    if (dropped) {
+      const goneKey = artistKey(dropped.track);
+      const left = (artistCounts.get(goneKey) ?? 1) - 1;
+      if (left > 0) artistCounts.set(goneKey, left);
+      else artistCounts.delete(goneKey);
+    }
   }
 
   return enforceTagEntropy(chosen, remaining);
-}
-
-function artistAllowed(track: Track, chosen: readonly RankedTrack[]): boolean {
-  const key = artistKey(track);
-  const window = chosen.slice(-ARTIST_WINDOW);
-  let count = 0;
-  for (const c of window) {
-    if (artistKey(c.track) === key) count++;
-  }
-  return count < ARTIST_CAP;
 }
 
 /**
@@ -158,14 +170,9 @@ function artistAllowed(track: Track, chosen: readonly RankedTrack[]): boolean {
  */
 function indexOfNovelPick(
   usable: readonly RankedTrack[],
-  chosen: readonly RankedTrack[],
+  used: ReadonlySet<string>,
   rand: () => number,
 ): number {
-  const used = new Set<string>();
-  for (const c of chosen) {
-    for (const t of tagsOf(c.track)) used.add(t);
-  }
-
   const novel: number[] = [];
   for (let i = 0; i < usable.length; i++) {
     const tags = tagsOf(usable[i]!.track);

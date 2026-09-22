@@ -104,7 +104,33 @@ const TAG_CONTEXT_LIMIT = 8;
  * an evening tends to drift — rather than only which tracks are good on
  * average.
  */
+/**
+ * Cached per track object.
+ *
+ * A track is featurized every time it is scored, and it is scored on every
+ * refill and every render — building a map, hashing thirty-odd strings and
+ * normalising, each time, for a vector that cannot have changed. A WeakMap
+ * keyed on the track object means a track fetched again gets a fresh entry and
+ * nothing is retained after the queue drops it.
+ */
+const featureCache = new WeakMap<Track, Map<string, SparseVec>>();
+
 export function featurize(track: Track, bucket: number, previousTags: string[] = []): SparseVec {
+  const key = bucket + '|' + previousTags.join(',');
+  let perTrack = featureCache.get(track);
+  if (!perTrack) {
+    perTrack = new Map<string, SparseVec>();
+    featureCache.set(track, perTrack);
+  }
+  const hit = perTrack.get(key);
+  if (hit) return hit;
+
+  const built = buildFeatures(track, bucket, previousTags);
+  perTrack.set(key, built);
+  return built;
+}
+
+function buildFeatures(track: Track, bucket: number, previousTags: string[]): SparseVec {
   const acc = new Map<number, number>();
 
   const add = (key: string, weight: number): void => {
