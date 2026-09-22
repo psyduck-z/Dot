@@ -1,7 +1,7 @@
 {
-  "version": "1bd487d",
+  "version": "c95167c",
   "bundle": "bundle.js",
-  "notes": "Start the mirror before the app, not after it",
+  "notes": "Stop a stale downloaded bundle outliving the APK that replaced it",
   "apk": "dot.apk",
-  "apkVersion": 71
+  "apkVersion": 72
 }
