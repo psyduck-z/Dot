@@ -1,5 +1,5 @@
 {
-  "version": "3798e58",
+  "version": "8285e41",
   "bundle": "bundle.js",
-  "notes": "Report the WebView version and a CPU figure in Settings"
+  "notes": "Cache the work that was being redone, and fix the sim's shuffle"
 }
