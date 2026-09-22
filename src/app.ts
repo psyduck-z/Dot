@@ -110,6 +110,44 @@ function describeEngine(): string {
     (sink < 0 ? '' : '')
   );
 }
+/**
+ * Which WebView is rendering Dot, and whether there is another to switch to.
+ *
+ * The engine's age is the whole of the performance story — the player costs
+ * seven seconds on the watch against one on a desktop over the same network,
+ * and that is the thirty-fold gap in JavaScript speed, not the network. A newer
+ * provider is the only lever that moves it, and whether the ROM will accept one
+ * is not something the web layer can find out for itself.
+ *
+ * Nothing at all on a desktop or an ordinary browser, where the question does
+ * not arise.
+ */
+function describeWebView(): string[] {
+  let raw: string;
+  try {
+    raw = window.DotNative?.webViewInfo?.() ?? '';
+  } catch {
+    return [];
+  }
+  if (!raw) return [];
+
+  let info: { active?: string; version?: string; others?: string[] };
+  try {
+    info = JSON.parse(raw) as typeof info;
+  } catch {
+    return [];
+  }
+
+  const lines = ['WebView provider: ' + (info.active ?? 'unknown') + ' ' + (info.version ?? '')];
+  const others = info.others ?? [];
+  lines.push(
+    others.length > 0
+      ? 'Also installed: ' + others.join(', ') + ' — Developer options › WebView implementation'
+      : 'No other WebView provider is installed, so there is nothing to switch to.',
+  );
+  return lines;
+}
+
 /** Must match the rail width in the stylesheet. */
 const RAIL_WIDTH = 62;
 /** The only sections long enough to be worth hiding. */
@@ -140,7 +178,11 @@ const CAPTION_STEP_MS = 1800;
 /** Injected by the Android shell. Absent in a browser. */
 declare global {
   interface Window {
-    DotNative?: { setKeepAwake(on: boolean): void; setBrightness(level: number): void };
+    DotNative?: {
+      setKeepAwake(on: boolean): void;
+      setBrightness(level: number): void;
+      webViewInfo?(): string;
+    };
   }
 }
 
@@ -1174,6 +1216,7 @@ export class App {
     // and that is where the time goes on this device. A frozen WebView from
     // the ROM is years behind on JS performance.
     host.appendChild(el('p', 'muted', describeEngine()));
+    for (const line of describeWebView()) host.appendChild(el('p', 'muted', line));
 
     host.appendChild(el('h2', 'shelf-title', 'Discovery'));
     host.appendChild(

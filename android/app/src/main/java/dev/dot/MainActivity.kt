@@ -15,6 +15,7 @@ import android.webkit.WebViewClient
 import android.widget.FrameLayout
 import android.app.Activity
 import androidx.webkit.WebViewAssetLoader
+import androidx.webkit.WebViewCompat
 
 /**
  * The whole app is a WebView. The UI, the recommender and the storage all live
@@ -137,6 +138,57 @@ class MainActivity : Activity() {
                     }
                 window.attributes = attrs
             }
+        }
+
+        /**
+         * Which WebView is rendering Dot, and what else is installed that
+         * could.
+         *
+         * Everything slow about this app is the age of the engine: the player
+         * costs seven seconds here against one on a desktop, on the same
+         * network, and the gap is the thirty-fold difference in how fast the
+         * two run JavaScript. A newer provider is the only thing that moves
+         * that number, and whether one can be selected at all is a property of
+         * the ROM. So report what is active and what is present, rather than
+         * leaving it to be guessed at: on most non-GMS builds the candidate
+         * list comes back empty and that is the answer.
+         *
+         * Returns JSON; the framework decides what it will actually accept, so
+         * a package appearing here is a candidate and not a promise.
+         */
+        @JavascriptInterface
+        fun webViewInfo(): String {
+            val active = try {
+                WebViewCompat.getCurrentWebViewPackage(this@MainActivity)
+            } catch (e: Throwable) {
+                null
+            }
+
+            // The package names the platform has ever shipped a provider under,
+            // plus the two rebuilds that exist precisely for ROMs without
+            // Google's. Installed is not the same as selectable.
+            val known = listOf(
+                "com.android.webview",
+                "com.google.android.webview",
+                "com.android.chrome",
+                "us.spotco.mulch_wv",
+                "org.bromite.webview",
+            )
+            val others = StringBuilder()
+            for (name in known) {
+                if (name == active?.packageName) continue
+                val version = try {
+                    packageManager.getPackageInfo(name, 0).versionName
+                } catch (e: Throwable) {
+                    null
+                } ?: continue
+                if (others.isNotEmpty()) others.append(',')
+                others.append('"').append(name).append(' ').append(version).append('"')
+            }
+
+            return "{\"active\":\"" + (active?.packageName ?: "unknown") +
+                "\",\"version\":\"" + (active?.versionName ?: "unknown") +
+                "\",\"others\":[" + others + "]}"
         }
 
         @JavascriptInterface
