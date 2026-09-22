@@ -87,6 +87,29 @@ const AMBIENT_DELAY_MS = 25000;
 const DOUBLE_TAP_MS = 350;
 /** The dimmest the window can go without being off. */
 const DIM_FLOOR = 0.01;
+
+/**
+ * A short benchmark plus the engine version.
+ *
+ * The loop is arbitrary work; its only purpose is to give the same number a
+ * desktop can be compared against, so "the CPU is slower" stops being an
+ * assertion and becomes a ratio.
+ */
+function describeEngine(): string {
+  const ua = navigator.userAgent || '';
+  const chrome = /Chrome\/(\d+)/.exec(ua)?.[1] ?? 'unknown';
+  const android = /Android (\d+(?:\.\d+)?)/.exec(ua)?.[1] ?? 'n/a';
+
+  const started = Date.now();
+  let sink = 0;
+  for (let i = 0; i < 2_000_000; i++) sink += i % 7;
+  const bench = Date.now() - started;
+
+  return (
+    'Chromium ' + chrome + ' · Android ' + android + ' · CPU test ' + bench + 'ms' +
+    (sink < 0 ? '' : '')
+  );
+}
 /** Must match the rail width in the stylesheet. */
 const RAIL_WIDTH = 62;
 /** The only sections long enough to be worth hiding. */
@@ -1146,6 +1169,11 @@ export class App {
     this.timingLine = el('p', 'muted');
     this.paintTiming();
     host.appendChild(this.timingLine);
+
+    // The engine version decides how fast the player's own JavaScript runs,
+    // and that is where the time goes on this device. A frozen WebView from
+    // the ROM is years behind on JS performance.
+    host.appendChild(el('p', 'muted', describeEngine()));
 
     host.appendChild(el('h2', 'shelf-title', 'Discovery'));
     host.appendChild(
