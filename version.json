@@ -1,5 +1,5 @@
 {
-  "version": "0dc04d3",
+  "version": "ef48b6f",
   "bundle": "bundle.js",
-  "notes": "Allow cleartext in debug builds, and restart straight back to Development"
+  "notes": "Sign every build with the same key, so updates can actually install"
 }
