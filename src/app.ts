@@ -134,26 +134,39 @@ function describeEngine(): string {
  * not arise.
  */
 function describeWebView(): string[] {
+  const native = window.DotNative;
+  // Not the Android shell at all — a desktop browser, where the question does
+  // not arise and a line about it would be noise.
+  if (!native) return [];
+
+  // The web layer updates over the air and the shell does not, so the two drift
+  // apart by design. Saying so is the point: this printed nothing at all when
+  // the method was missing, which reads exactly like "no other provider found"
+  // and is a different answer entirely.
+  if (!native.webViewInfo) {
+    return ['WebView provider: install the latest APK to see this — the Android shell here predates it.'];
+  }
+
   let raw: string;
   try {
-    raw = window.DotNative?.webViewInfo?.() ?? '';
+    raw = native.webViewInfo() ?? '';
   } catch {
-    return [];
+    return ['WebView provider: the Android shell would not answer.'];
   }
-  if (!raw) return [];
+  if (!raw) return ['WebView provider: the Android shell returned nothing.'];
 
   let info: { active?: string; version?: string; others?: string[] };
   try {
     info = JSON.parse(raw) as typeof info;
   } catch {
-    return [];
+    return ['WebView provider: the answer from the shell did not parse — ' + raw.slice(0, 60)];
   }
 
   const lines = ['WebView provider: ' + (info.active ?? 'unknown') + ' ' + (info.version ?? '')];
   const others = info.others ?? [];
   lines.push(
     others.length > 0
-      ? 'Also installed: ' + others.join(', ') + ' — Developer options › WebView implementation'
+      ? 'Also installed: ' + others.join(', ') + ' — a newer engine may be selectable.'
       : 'No other WebView provider is installed, so there is nothing to switch to.',
   );
   return lines;
