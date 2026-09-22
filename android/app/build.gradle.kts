@@ -13,8 +13,12 @@ android {
         // hand-rolled shell has no floor of its own to respect.
         minSdk = 21
         targetSdk = 34
-        versionCode = 1
-        versionName = "0.1.0"
+        // Supplied by CI, which passes the run number. Android refuses to
+        // install an APK whose versionCode is not higher than the installed
+        // one, so a constant here would mean the in-app updater could never
+        // offer anything. Falls back to 1 for local builds.
+        versionCode = (System.getenv("DOT_VERSION_CODE") ?: "1").toInt()
+        versionName = System.getenv("DOT_VERSION_NAME") ?: "0.1.0"
     }
 
     signingConfigs {
@@ -63,8 +67,11 @@ android {
 }
 
 dependencies {
-    // The only dependency. WebViewAssetLoader is what lets the app serve its
-    // own files over https instead of file://, which the YouTube IFrame player
-    // requires — see MainActivity.
+    // WebViewAssetLoader is what lets the app serve its own files over https
+    // instead of file://, which the YouTube IFrame player requires — see
+    // MainActivity.
     implementation("androidx.webkit:webkit:1.11.0")
+    // FileProvider. An APK handed to the installer has to arrive as a
+    // content:// URI — a file:// one is rejected outright on Android 7 and up.
+    implementation("androidx.core:core:1.13.1")
 }

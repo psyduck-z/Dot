@@ -38,37 +38,6 @@ jobs:
         # it is entered per device in Settings instead.
         run: node scripts/build.mjs
 
-      - name: Publish web build for over-the-air updates
-        # The APK is a WebView around this bundle, so shipping a new bundle is
-        # usually enough - no reinstall. Host these two files anywhere the
-        # watch can reach and point Settings > Updates at version.json.
-        run: |
-          mkdir -p web
-          cp public/bundle.js public/index.html web/
-          # jq rather than printf: commit subjects contain quotes and
-          # apostrophes that would otherwise produce invalid JSON.
-          SHA=$(echo "$GITHUB_SHA" | cut -c1-7)
-          NOTES=$(git log -1 --pretty=%s)
-          jq -n --arg v "$SHA" --arg n "$NOTES" '{version: $v, bundle: "bundle.js", notes: $n}' > web/version.json
-          cat web/version.json
-
-      - uses: actions/upload-artifact@v4
-        with:
-          name: dot-web
-          path: web/*
-          if-no-files-found: error
-
-      - name: Publish to gh-pages
-        # Serves the files the in-app updater fetches. Only from the default
-        # branch: a build from a side branch should not become what every
-        # watch downloads. Uses the workflow's own token, so no PAT is needed.
-        if: github.ref == 'refs/heads/main'
-        uses: peaceiris/actions-gh-pages@v4
-        with:
-          github_token: ${{ secrets.GITHUB_TOKEN }}
-          publish_dir: ./web
-          keep_files: false
-
       - name: Stage web build as Android assets
         run: |
           mkdir -p android/app/src/main/assets
@@ -86,6 +55,12 @@ jobs:
 
       - name: Build debug APK
         working-directory: android
+        # The run number becomes the versionCode. Android will not install an
+        # APK whose versionCode is not higher than the installed one, so a
+        # constant would make the in-app installer useless.
+        env:
+          DOT_VERSION_CODE: ${{ github.run_number }}
+          DOT_VERSION_NAME: ${{ github.run_number }}-${{ github.sha }}
         run: gradle assembleDebug --no-daemon --stacktrace
 
       - name: Name the APK
@@ -94,6 +69,40 @@ jobs:
           cp android/app/build/outputs/apk/debug/app-debug.apk \
              "dist/dot-${GITHUB_SHA::7}.apk"
           ls -la dist
+
+      - name: Publish web build and APK for over-the-air updates
+        # Runs after the APK exists so the same publish carries both. A new
+        # bundle covers most changes with no reinstall; anything touching the
+        # Android shell needs the APK, which the app can now fetch and hand to
+        # the system installer itself.
+        run: |
+          mkdir -p web
+          cp public/bundle.js public/index.html web/
+          cp android/app/build/outputs/apk/debug/app-debug.apk web/dot.apk
+          # jq rather than printf: commit subjects contain quotes and
+          # apostrophes that would otherwise produce invalid JSON.
+          SHA=$(echo "$GITHUB_SHA" | cut -c1-7)
+          NOTES=$(git log -1 --pretty=%s)
+          jq -n --arg v "$SHA" --arg n "$NOTES"                 --argjson a ${{ github.run_number }}              '{version: $v, bundle: "bundle.js", notes: $n, apk: "dot.apk", apkVersion: $a}'              > web/version.json
+          cat web/version.json
+          ls -la web
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: dot-web
+          path: web/*
+          if-no-files-found: error
+
+      - name: Publish to gh-pages
+        # Serves the files the in-app updater fetches. Only from the default
+        # branch: a build from a side branch should not become what every
+        # watch downloads. Uses the workflow's own token, so no PAT is needed.
+        if: github.ref == 'refs/heads/main'
+        uses: peaceiris/actions-gh-pages@v4
+        with:
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          publish_dir: ./web
+          keep_files: false
 
       - uses: actions/upload-artifact@v4
         with:

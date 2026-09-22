@@ -19,6 +19,11 @@ import androidx.webkit.WebViewCompat
 import android.content.Context
 import java.net.HttpURLConnection
 import java.net.URL
+import java.io.File
+import android.content.Intent
+import android.net.Uri
+import android.provider.Settings
+import androidx.core.content.FileProvider
 
 /**
  * The whole app is a WebView. The UI, the recommender and the storage all live
@@ -158,6 +163,9 @@ class MainActivity : Activity() {
 
     /** Result of the most recent reachability probe; empty while it runs. */
     @Volatile private var probeResult = ""
+
+    /** Progress of an APK download, read by the page while it runs. */
+    @Volatile private var installState = ""
 
     /**
      * What the web layer can ask the shell for.
@@ -333,6 +341,118 @@ class MainActivity : Activity() {
         /** Empty while a probe is still in flight. */
         @JavascriptInterface
         fun probeStatus(): String = probeResult
+
+        /**
+         * This build's versionCode, so the app can tell whether the published
+         * APK is newer than the one it is running.
+         */
+        @JavascriptInterface
+        fun appVersionCode(): Int = try {
+            packageManager.getPackageInfo(packageName, 0).versionCode
+        } catch (e: Throwable) {
+            0
+        }
+
+        /**
+         * Whether the system will let this app ask to install one.
+         *
+         * Android 8 made this a per-app permission rather than a global switch,
+         * and it cannot be granted from inside the app — only in Settings. The
+         * page asks first so it can send someone to the right screen instead of
+         * firing an intent that silently does nothing.
+         */
+        @JavascriptInterface
+        fun canInstallApks(): Boolean =
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                packageManager.canRequestPackageInstalls()
+            } else {
+                true
+            }
+
+        /** Opens the screen where that permission is granted. */
+        @JavascriptInterface
+        fun openInstallPermission() {
+            if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) return
+            runOnUiThread {
+                try {
+                    startActivity(
+                        Intent(
+                            Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES,
+                            Uri.parse("package:" + packageName)
+                        )
+                    )
+                } catch (e: Throwable) {
+                    installState = "fail no settings screen for this permission"
+                }
+            }
+        }
+
+        /**
+         * Downloads an APK and hands it to the system installer.
+         *
+         * The install itself is the system's dialog and the user's decision —
+         * installing silently needs privileges a sideloaded app does not have
+         * and should not have. What this removes is the part that was actually
+         * painful: getting the file onto a watch with no USB and no browser.
+         *
+         * Written into files/updates, the one directory the FileProvider
+         * exposes, and handed over as a content:// URI because a file:// one is
+         * refused outright from Android 7 on.
+         */
+        @JavascriptInterface
+        fun installUpdate(url: String) {
+            installState = "downloading"
+            Thread {
+                try {
+                    val dir = File(filesDir, "updates")
+                    dir.mkdirs()
+                    // Replaced rather than accumulated: these are ~1.5MB each
+                    // and there is no reason to keep yesterday's.
+                    val target = File(dir, "dot-update.apk")
+                    if (target.exists()) target.delete()
+
+                    val conn = URL(url).openConnection() as HttpURLConnection
+                    conn.connectTimeout = 15000
+                    conn.readTimeout = 30000
+                    conn.instanceFollowRedirects = true
+                    val code = conn.responseCode
+                    if (code !in 200..299) {
+                        installState = "fail http " + code
+                        conn.disconnect()
+                        return@Thread
+                    }
+                    conn.inputStream.use { input ->
+                        target.outputStream().use { output -> input.copyTo(output) }
+                    }
+                    conn.disconnect()
+
+                    // A truncated download would be rejected by the installer
+                    // with nothing useful said about why.
+                    if (target.length() < 100_000) {
+                        installState = "fail download looked incomplete"
+                        return@Thread
+                    }
+
+                    val uri = FileProvider.getUriForFile(
+                        this@MainActivity,
+                        packageName + ".files",
+                        target
+                    )
+                    val intent = Intent(Intent.ACTION_VIEW)
+                        .setDataAndType(uri, "application/vnd.android.package-archive")
+                        .addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                        .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                    installState = "ready"
+                    runOnUiThread { startActivity(intent) }
+                } catch (e: Throwable) {
+                    installState = "fail " + (e.message ?: e.javaClass.simpleName)
+                }
+            }.start()
+        }
+
+        /** Empty until something has happened; then downloading, ready or fail. */
+        @JavascriptInterface
+        fun installStatus(): String = installState
 
         @JavascriptInterface
         fun setKeepAwake(on: Boolean) {

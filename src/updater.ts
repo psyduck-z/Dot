@@ -46,6 +46,10 @@ export interface UpdateManifest {
   /** Absolute or relative to the manifest. */
   bundle: string;
   notes?: string;
+  /** The published APK, for changes the bundle cannot carry. */
+  apk?: string;
+  /** Its versionCode, compared against the installed one. */
+  apkVersion?: number;
 }
 
 export interface UpdateStatus {
@@ -53,6 +57,16 @@ export interface UpdateStatus {
   available?: string;
   notes?: string;
   message: string;
+  /**
+   * Set when the published APK is newer than the installed one.
+   *
+   * The bundle covers most changes, but anything in the Android shell — a
+   * permission, a bridge method, the manifest — can only arrive as an APK, and
+   * an update check that quietly ignored those was how a fix could be published,
+   * downloaded, reported as installed, and still not be present.
+   */
+  apkUrl?: string;
+  apkVersion?: number;
 }
 
 function read(key: string): string | null {
@@ -111,6 +125,15 @@ export function markBootSuccessful(): void {
   remove(KEY.sentinel);
 }
 
+/** The running shell's versionCode, or 0 when not inside the Android app. */
+export function nativeVersion(): number {
+  try {
+    return window.DotNative?.appVersionCode?.() ?? 0;
+  } catch {
+    return 0;
+  }
+}
+
 function resolve(base: string, path: string): string {
   if (/^https?:\/\//.test(path)) return path;
   return base.replace(/\/[^/]*$/, '/') + path.replace(/^\.?\//, '');
@@ -140,8 +163,25 @@ export async function checkForUpdate(): Promise<UpdateStatus> {
   if (!manifest?.version || !manifest.bundle) {
     return { current, message: 'That URL did not return a valid manifest.' };
   }
+  // Resolved regardless of whether the bundle itself changed: the shell and the
+  // bundle move independently, and a native-only change leaves the bundle
+  // version untouched.
+  const installed = nativeVersion();
+  const apkNewer =
+    installed > 0 &&
+    typeof manifest.apkVersion === 'number' &&
+    manifest.apkVersion > installed &&
+    typeof manifest.apk === 'string';
+  const apkParts = apkNewer
+    ? { apkUrl: resolve(url, manifest.apk as string), apkVersion: manifest.apkVersion }
+    : {};
+
   if (manifest.version === current) {
-    return { current, message: 'Up to date.' };
+    return {
+      current,
+      ...apkParts,
+      message: apkNewer ? 'Bundle up to date. A newer app is available.' : 'Up to date.',
+    };
   }
 
   let code: string;
@@ -166,6 +206,9 @@ export async function checkForUpdate(): Promise<UpdateStatus> {
     current,
     available: manifest.version,
     notes: manifest.notes,
-    message: 'Updated to ' + manifest.version + '. Restart Dot to use it.',
+    ...apkParts,
+    message:
+      'Updated to ' + manifest.version + '. Restart Dot to use it.' +
+      (apkNewer ? ' A newer app is available too.' : ''),
   };
 }

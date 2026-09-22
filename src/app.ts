@@ -245,6 +245,11 @@ declare global {
       clearDevFailure?(): void;
       probeDevServer?(url: string): void;
       probeStatus?(): string;
+      appVersionCode?(): number;
+      canInstallApks?(): boolean;
+      openInstallPermission?(): void;
+      installUpdate?(url: string): void;
+      installStatus?(): string;
     };
   }
 }
@@ -1643,8 +1648,9 @@ export class App {
       el(
         'p',
         'muted',
-        'Dot can fetch a new build itself, so most changes do not need the APK ' +
-          'reinstalled. Leave the box empty to use the official build.',
+        'Dot can fetch a new build itself. Most changes arrive that way; ones ' +
+          'that touch the Android side come as an app update, offered below ' +
+          'when there is one. Leave the box empty to use the official build.',
       ),
     );
 
@@ -1679,9 +1685,52 @@ export class App {
           // running one is already evaluated.
           reloadBtn.hidden = false;
         }
+        // The shell and the bundle move independently, so this is offered on
+        // its own terms rather than as part of the bundle result.
+        if (status.apkUrl) {
+          installBtn.hidden = false;
+          installBtn.textContent = 'Install app update (' + status.apkVersion + ')';
+          pendingApk = status.apkUrl;
+        }
       });
     });
     host.appendChild(checkBtn);
+
+    // Everything below is the app update, which is a different thing from a new
+    // bundle: it replaces the Android shell, so it goes through the system
+    // installer and needs a permission the app cannot grant itself.
+    let pendingApk = '';
+    const installBtn = button('primary', 'Install app update');
+    installBtn.hidden = true;
+    installBtn.addEventListener('click', () => {
+      const native = window.DotNative;
+      if (!pendingApk || !native?.installUpdate) return;
+
+      // Asked before the download rather than after, so a refusal costs
+      // nothing and the explanation arrives while it still makes sense.
+      if (native.canInstallApks && !native.canInstallApks()) {
+        updateState.textContent =
+          'Android needs permission to install apps from Dot. Turn it on, then tap this again.';
+        native.openInstallPermission?.();
+        return;
+      }
+
+      installBtn.disabled = true;
+      updateState.textContent = 'Downloading the app update…';
+      native.installUpdate(pendingApk);
+
+      const poll = window.setInterval(() => {
+        const state = native.installStatus?.() ?? '';
+        if (state === 'downloading' || !state) return;
+        window.clearInterval(poll);
+        installBtn.disabled = false;
+        updateState.textContent =
+          state === 'ready'
+            ? 'Downloaded. Confirm the install when Android asks.'
+            : 'Could not install: ' + state.replace(/^fail /, '');
+      }, 500);
+    });
+    host.appendChild(installBtn);
 
     const reloadBtn = button('toggle', 'Restart to apply');
     reloadBtn.hidden = true;
