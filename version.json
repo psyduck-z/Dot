@@ -1,7 +1,7 @@
 {
-  "version": "bef7952",
+  "version": "1bd487d",
   "bundle": "bundle.js",
-  "notes": "Drop the in-app installer",
+  "notes": "Start the mirror before the app, not after it",
   "apk": "dot.apk",
-  "apkVersion": 70
+  "apkVersion": 71
 }
