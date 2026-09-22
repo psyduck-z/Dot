@@ -4,10 +4,14 @@
     <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
     <uses-permission android:name="android.permission.WAKE_LOCK" />
-    <!-- So the app can offer its own APK to the system installer. The install
-         itself is still the system's dialog and the user's decision; this only
-         permits asking. Without it the intent is refused on Android 8 and up. -->
-    <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
+    <!-- Offering the app's own APK to the system installer needs
+         REQUEST_INSTALL_PACKAGES, and it is deliberately not requested here.
+         An app that asks for both internet access and the ability to install
+         other apps is the exact shape of a dropper, and Play Protect blocks
+         sideloaded debug builds that request it outright — which cost more than
+         the convenience was worth. The code behind it is intact: restore this
+         line and the in-app installer comes back.
+    <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" /> -->
 
     <!-- These watches report no touchscreen or no telephony on some firmware;
          declaring nothing required keeps the APK installable on all of them. -->

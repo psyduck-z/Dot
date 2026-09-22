@@ -361,6 +361,25 @@ class MainActivity : Activity() {
          * page asks first so it can send someone to the right screen instead of
          * firing an intent that silently does nothing.
          */
+        /**
+         * Whether this build asks for the permission at all.
+         *
+         * It currently does not: requesting it got the APK blocked as harmful
+         * before it could be installed. Reported separately from
+         * canInstallApks so the app can hide the offer entirely rather than
+         * show a button that sends someone to a settings screen with no switch
+         * on it.
+         */
+        @JavascriptInterface
+        fun installSupported(): Boolean = try {
+            val declared = packageManager
+                .getPackageInfo(packageName, android.content.pm.PackageManager.GET_PERMISSIONS)
+                .requestedPermissions
+            declared?.any { it == "android.permission.REQUEST_INSTALL_PACKAGES" } == true
+        } catch (e: Throwable) {
+            false
+        }
+
         @JavascriptInterface
         fun canInstallApks(): Boolean =
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {

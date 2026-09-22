@@ -246,6 +246,7 @@ declare global {
       probeDevServer?(url: string): void;
       probeStatus?(): string;
       appVersionCode?(): number;
+      installSupported?(): boolean;
       canInstallApks?(): boolean;
       openInstallPermission?(): void;
       installUpdate?(url: string): void;
@@ -1687,10 +1688,17 @@ export class App {
         }
         // The shell and the bundle move independently, so this is offered on
         // its own terms rather than as part of the bundle result.
-        if (status.apkUrl) {
+        // Hidden outright when the shell cannot install one, rather than shown
+        // and then failing: there would be nothing the person could do about
+        // it, and a button that leads to a settings screen with no switch on it
+        // is worse than no button.
+        if (status.apkUrl && window.DotNative?.installSupported?.()) {
           installBtn.hidden = false;
           installBtn.textContent = 'Install app update (' + status.apkVersion + ')';
           pendingApk = status.apkUrl;
+        } else if (status.apkUrl) {
+          updateState.textContent =
+            status.message + ' The app update has to be installed by hand.';
         }
       });
     });
