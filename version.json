@@ -1,7 +1,7 @@
 {
-  "version": "5bf226a",
+  "version": "18155cc",
   "bundle": "bundle.js",
-  "notes": "Stop requesting the permission that got the APK blocked as harmful",
+  "notes": "Ship a release build, to stop looking like a dropper",
   "apk": "dot.apk",
-  "apkVersion": 68
+  "apkVersion": 69
 }
