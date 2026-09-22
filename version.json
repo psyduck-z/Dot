@@ -1,5 +1,5 @@
 {
-  "version": "a2abe55",
+  "version": "608438b",
   "bundle": "bundle.js",
-  "notes": "Mirror the watch's screen, and let it run from a dev machine"
+  "notes": "Say whether the mirror is connected, instead of leaving it to be guessed"
 }
