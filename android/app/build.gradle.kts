@@ -17,7 +17,36 @@ android {
         versionName = "0.1.0"
     }
 
+    signingConfigs {
+        /*
+         * A debug keystore kept in the repository, so every build is signed
+         * with the same key.
+         *
+         * Without this, Gradle mints a throwaway keystore on whatever machine
+         * is building, and CI gets a fresh one every run — three consecutive
+         * builds here carried three different certificates. Android will not
+         * install an APK over an app signed with a different key, so each new
+         * build silently could not be installed over the last one, and the only
+         * way to take an update was to uninstall and lose everything the app
+         * had stored. That is a miserable way to ship to a watch.
+         *
+         * This is not a secret. It is the conventional Android debug key, with
+         * the conventional password, and it protects nothing — anyone can
+         * generate an equivalent one. It exists so that updates install.
+         * Release builds are signed separately and do not use it.
+         */
+        getByName("debug") {
+            storeFile = rootProject.file("debug.keystore")
+            storePassword = "android"
+            keyAlias = "androiddebugkey"
+            keyPassword = "android"
+        }
+    }
+
     buildTypes {
+        debug {
+            signingConfig = signingConfigs.getByName("debug")
+        }
         release {
             isMinifyEnabled = false
         }
