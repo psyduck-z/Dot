@@ -443,3 +443,6 @@ android/local.properties
 
 # Downloaded CI artifacts. Rebuildable; never source.
 dist/
+
+# Locally downloaded build artifacts, not source.
+dist-apk/
