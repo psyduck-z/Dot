@@ -52,6 +52,12 @@ android {
             signingConfig = signingConfigs.getByName("debug")
         }
         release {
+            // Same key as debug, deliberately. The signature is what decides
+            // whether an update can install over what is already there, so
+            // sharing it means moving between build types costs no reinstall.
+            signingConfig = signingConfigs.getByName("debug")
+            // Left off: shrinking a 2MB WebView wrapper saves little, and an
+            // obfuscated unknown APK is more suspicious, not less.
             isMinifyEnabled = false
         }
     }

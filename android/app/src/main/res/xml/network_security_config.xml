@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Replaces android:usesCleartextTraffic, which used to be false and had to be
+  flipped to true in a debug-only manifest. That worked only for debug builds,
+  and the published build is a release build now, so the exception has to live
+  somewhere both share.
+
+  Stated as a config rather than a boolean because a boolean says only "plain
+  HTTP is allowed" with no record of what for. The app's real traffic — the
+  YouTube API, the update server — is HTTPS and stays that way. The exception is
+  a development server on a private address, which has no certificate to offer
+  and never will.
+
+  Not scoped to one address on purpose: Settings accepts a full address so that
+  a machine whose IP has changed does not require building a new APK, and a
+  host-locked exception would quietly take that back.
+-->
+<network-security-config>
+    <base-config cleartextTrafficPermitted="true">
+        <trust-anchors>
+            <certificates src="system" />
+        </trust-anchors>
+    </base-config>
+</network-security-config>

@@ -1,8 +1,10 @@
 name: Android APK
 
 # The APK is built here rather than locally because there is no Android SDK on
-# the development machine — the runner supplies it. Debug builds are used for
-# now: they need no signing secrets and install fine by sideloading.
+# the development machine — the runner supplies it. Release builds, signed with
+# the keystore in the repository: a debuggable APK signed by a throwaway
+# certificate is most of what makes a sideloaded app look harmful, and this one
+# has to ask for permission to install APKs, which is the rest of it.
 on:
   push:
     branches: ['**']
@@ -53,7 +55,7 @@ jobs:
         with:
           gradle-version: '8.7'
 
-      - name: Build debug APK
+      - name: Build release APK
         working-directory: android
         # The run number becomes the versionCode. Android will not install an
         # APK whose versionCode is not higher than the installed one, so a
@@ -61,12 +63,17 @@ jobs:
         env:
           DOT_VERSION_CODE: ${{ github.run_number }}
           DOT_VERSION_NAME: ${{ github.run_number }}-${{ github.sha }}
-        run: gradle assembleDebug --no-daemon --stacktrace
+        # Release rather than debug: a debuggable APK is one of the things
+        # Play Protect weighs when deciding a sideloaded app is harmful, and
+        # this one has to ask for permission to install APKs, which is the
+        # other. Signed with the same key either way, so the build type can
+        # change without forcing a reinstall.
+        run: gradle assembleRelease --no-daemon --stacktrace
 
       - name: Name the APK
         run: |
           mkdir -p dist
-          cp android/app/build/outputs/apk/debug/app-debug.apk \
+          cp android/app/build/outputs/apk/release/app-release.apk \
              "dist/dot-${GITHUB_SHA::7}.apk"
           ls -la dist
 
@@ -78,7 +85,7 @@ jobs:
         run: |
           mkdir -p web
           cp public/bundle.js public/index.html web/
-          cp android/app/build/outputs/apk/debug/app-debug.apk web/dot.apk
+          cp android/app/build/outputs/apk/release/app-release.apk web/dot.apk
           # jq rather than printf: commit subjects contain quotes and
           # apostrophes that would otherwise produce invalid JSON.
           SHA=$(echo "$GITHUB_SHA" | cut -c1-7)
