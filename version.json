@@ -1,5 +1,5 @@
 {
-  "version": "608438b",
+  "version": "58fc40c",
   "bundle": "bundle.js",
-  "notes": "Say whether the mirror is connected, instead of leaving it to be guessed"
+  "notes": "Bake in the dev machine's address and ask only for the port"
 }
