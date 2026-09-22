@@ -1,5 +1,5 @@
 {
-  "version": "faa4414",
+  "version": "24d9f09",
   "bundle": "bundle.js",
-  "notes": "Say why the WebView line is missing instead of hiding it"
+  "notes": "Ignore locally downloaded APKs"
 }
