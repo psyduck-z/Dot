@@ -100,14 +100,25 @@ function describeEngine(): string {
   const chrome = /Chrome\/(\d+)/.exec(ua)?.[1] ?? 'unknown';
   const android = /Android (\d+(?:\.\d+)?)/.exec(ua)?.[1] ?? 'n/a';
 
-  const started = Date.now();
-  let sink = 0;
-  for (let i = 0; i < 2_000_000; i++) sink += i % 7;
-  const bench = Date.now() - started;
+  // Two runs, both reported. The first carries whatever the engine was doing
+  // at the time — compiling this loop, and competing with any startup work
+  // still in flight — which is why this number has moved between builds
+  // without the hardware changing. The second runs warm and is the one to
+  // compare across devices. The first is kept because every earlier reading
+  // was measured that way, and silently changing what a number means is worse
+  // than printing two.
+  const bench = (): number => {
+    const started = Date.now();
+    let sink = 0;
+    for (let i = 0; i < 2_000_000; i++) sink += i % 7;
+    return sink < 0 ? -1 : Date.now() - started;
+  };
+  const cold = bench();
+  const warm = bench();
 
   return (
-    'Chromium ' + chrome + ' · Android ' + android + ' · CPU test ' + bench + 'ms' +
-    (sink < 0 ? '' : '')
+    'Chromium ' + chrome + ' · Android ' + android +
+    ' · CPU test ' + cold + 'ms (warm ' + warm + 'ms)'
   );
 }
 /**
