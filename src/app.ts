@@ -173,6 +173,35 @@ function describeWebView(): string[] {
   return lines;
 }
 
+/**
+ * The development machine, baked in.
+ *
+ * Deliberately not something to be typed: the only device that would ever need
+ * to enter it has a keyboard the size of a postage stamp, and it is always the
+ * same machine. The port stays editable because that is one or two digits and
+ * does change, and a full address is still accepted so a new IP on the laptop
+ * does not mean building a new APK.
+ */
+const DEV_HOST = '192.168.88.128';
+const DEV_PORT = '5174';
+
+/** Bare port against the baked-in host; anything longer taken as an address. */
+function devUrlFrom(value: string): string {
+  const v = value.trim();
+  if (!v) return 'http://' + DEV_HOST + ':' + DEV_PORT;
+  if (/^[0-9]+$/.test(v)) return 'http://' + DEV_HOST + ':' + v;
+  if (/^https?:\/\//.test(v)) return v;
+  return 'http://' + v;
+}
+
+/** The port back out of a stored URL, or the whole thing if it is not ours. */
+function portOf(url: string): string {
+  if (!url) return '';
+  const match = /^https?:\/\/([^:/]+)(?::([0-9]+))?/.exec(url.trim());
+  if (!match) return url;
+  return match[1] === DEV_HOST ? (match[2] ?? '') : url;
+}
+
 /** Must match the rail width in the stylesheet. */
 const RAIL_WIDTH = 62;
 /** The only sections long enough to be worth hiding. */
@@ -1298,30 +1327,32 @@ export class App {
     if (!native?.setDevServer || !native.getDevServer) return;
 
     host.appendChild(
-      el('p', 'muted', 'Load Dot from a computer on this network instead of from the watch. Blank uses the installed copy.'),
+      el('p', 'muted', 'Load Dot from ' + DEV_HOST + ' instead of from the watch.'),
     );
 
+    // Only the port. Typing an address on a watch keyboard is punishing enough
+    // that it was the thing most likely to stop this being used at all, and the
+    // machine is always the same one. A full address is still accepted, so a
+    // new IP does not mean a new APK.
     const field = el('input', 'slider') as HTMLInputElement;
     field.type = 'text';
-    field.placeholder = 'http://192.168.1.10:5174';
-    field.value = native.getDevServer() ?? '';
+    field.inputMode = 'numeric';
+    field.placeholder = DEV_PORT;
+    field.value = portOf(native.getDevServer() ?? '');
     host.appendChild(field);
 
     const state = el('p', 'muted', '');
+    const target = (): string => devUrlFrom(field.value || DEV_PORT);
 
-    // Answers "is that address reachable from here" before committing to a
-    // restart. The page cannot ask this itself — from appassets it is an HTTPS
-    // page and a plain-HTTP request on the LAN is blocked as mixed content —
-    // so the shell asks on its behalf.
+    // Answers "is that reachable from here" before committing to a restart. The
+    // page cannot ask this itself — from appassets it is an HTTPS page and a
+    // plain-HTTP request on the LAN is blocked as mixed content — so the shell
+    // asks on its behalf.
     const test = button('toggle', 'Test connection');
     test.addEventListener('click', () => {
-      const target = field.value.trim();
-      if (!target) {
-        state.textContent = 'Enter an address first.';
-        return;
-      }
-      state.textContent = 'Testing ' + target + ' …';
-      native.probeDevServer?.(target);
+      const url = target();
+      state.textContent = 'Testing ' + url + ' …';
+      native.probeDevServer?.(url);
       let waited = 0;
       const poll = window.setInterval(() => {
         const result = native.probeStatus?.() ?? '';
@@ -1337,14 +1368,24 @@ export class App {
 
     const save = button('toggle', 'Save and restart');
     save.addEventListener('click', () => {
-      native.setDevServer?.(field.value);
+      const url = target();
+      native.setDevServer?.(url);
       // Deliberately not reloading here: the setting is read at launch, and a
       // reload from inside the page that just saved it is how it gets lost.
-      state.textContent = field.value.trim()
-        ? 'Saved. Close and reopen Dot to load from there.'
-        : 'Saved. Close and reopen Dot to use the installed copy.';
+      state.textContent = 'Saved ' + url + '. Close and reopen Dot.';
     });
     host.appendChild(save);
+
+    // One tap to go back, because the alternative is clearing a text field with
+    // a watch keyboard, and someone whose dev server is down needs this to be
+    // the easy path rather than the fiddly one.
+    const revert = button('toggle', 'Use the installed copy');
+    revert.addEventListener('click', () => {
+      native.setDevServer?.('');
+      state.textContent = 'Saved. Close and reopen Dot to use the installed copy.';
+    });
+    host.appendChild(revert);
+
     host.appendChild(state);
   }
 
