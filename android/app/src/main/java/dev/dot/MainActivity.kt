@@ -43,6 +43,7 @@ class MainActivity : Activity() {
         const val PACKAGED = "https://appassets.androidplatform.net/assets/index.html"
         const val KEY_DEV_URL = "devUrl"
         const val KEY_DEV_FAIL = "devFail"
+        const val KEY_RETURN_TO = "returnTo"
     }
 
     private lateinit var webView: WebView
@@ -258,6 +259,38 @@ class MainActivity : Activity() {
 
         @JavascriptInterface
         fun getDevServer(): String = prefs().getString(KEY_DEV_URL, "") ?: ""
+
+        /**
+         * Restarts the activity so the new address is picked up.
+         *
+         * recreate() rather than reloading the WebView: the address is read in
+         * onCreate, so running it again is what actually applies the setting,
+         * and it leaves no state behind from the origin being left.
+         */
+        @JavascriptInterface
+        fun restartApp() {
+            runOnUiThread { recreate() }
+        }
+
+        /**
+         * A note for the app to read after it comes back up.
+         *
+         * Kept here rather than in localStorage because the whole point of the
+         * restart is to change origin, and localStorage does not cross one —
+         * a note left by the installed copy is invisible to the dev server.
+         */
+        @JavascriptInterface
+        fun setReturnTo(tag: String) {
+            prefs().edit().putString(KEY_RETURN_TO, tag).apply()
+        }
+
+        /** Reads the note and clears it, so it acts on exactly one launch. */
+        @JavascriptInterface
+        fun consumeReturnTo(): String {
+            val tag = prefs().getString(KEY_RETURN_TO, "") ?: ""
+            if (tag.isNotEmpty()) prefs().edit().remove(KEY_RETURN_TO).apply()
+            return tag
+        }
 
         /** Why the last attempt to load from a dev server gave up, if it did. */
         @JavascriptInterface

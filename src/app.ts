@@ -239,6 +239,9 @@ declare global {
       setDevServer?(url: string): void;
       getDevServer?(): string;
       lastDevFailure?(): string;
+      restartApp?(): void;
+      setReturnTo?(tag: string): void;
+      consumeReturnTo?(): string;
       clearDevFailure?(): void;
       probeDevServer?(url: string): void;
       probeStatus?(): string;
@@ -424,11 +427,28 @@ export class App {
   }
 
   async start(): Promise<void> {
-    if (this.prefs.musicTags.length === 0) {
+    // Left by the shell before it restarted, and readable here even though the
+    // restart changed origin — which localStorage would not have survived.
+    const returnTo = window.DotNative?.consumeReturnTo?.() ?? '';
+
+    // Onboarding is skipped when coming back to Development on purpose. A
+    // restart onto a dev server lands on a fresh origin with no preferences, so
+    // the way back would otherwise be behind the tag picker — exactly the wrong
+    // place for it when the reason to be here is that something went wrong.
+    if (this.prefs.musicTags.length === 0 && returnTo !== 'development') {
       this.renderOnboarding();
       return;
     }
     this.renderShell();
+
+    if (returnTo === 'development') {
+      this.show('settings');
+      // After the pane has been laid out; it is built lazily on first show.
+      window.setTimeout(() => {
+        document.getElementById('dot-development')?.scrollIntoView();
+      }, 150);
+      if (this.prefs.musicTags.length === 0) return;
+    }
     // Kick the player off immediately, in parallel with fetching the feed, so
     // the two slow things overlap instead of queueing behind each other.
     this.ytEngine.prewarm();
@@ -1283,7 +1303,9 @@ export class App {
     // Nothing to say in a plain browser that is not mirroring either.
     if (!native?.setDevServer && !mirror.active) return;
 
-    host.appendChild(el('h2', 'shelf-title', 'Development'));
+    const heading = el('h2', 'shelf-title', 'Development');
+    heading.id = 'dot-development';
+    host.appendChild(heading);
 
     // The first question is always "is it even loading from the laptop", and
     // until now the only way to answer it was to guess from how the app felt.
@@ -1329,6 +1351,18 @@ export class App {
     host.appendChild(
       el('p', 'muted', 'Load Dot from ' + DEV_HOST + ' instead of from the watch.'),
     );
+    // Worth saying plainly, because the symptom is alarming and looks like data
+    // loss: a different address is a different origin, and localStorage does
+    // not cross one. The copy on the laptop starts with no tags, no key and no
+    // taste model. Nothing is gone — it is still there on the installed copy,
+    // which "Use the installed copy" goes back to.
+    host.appendChild(
+      el(
+        'p',
+        'muted',
+        'That copy keeps its own tags, key and taste model — yours are untouched and come back when you do.',
+      ),
+    );
 
     // Only the port. Typing an address on a watch keyboard is punishing enough
     // that it was the thing most likely to stop this being used at all, and the
@@ -1370,9 +1404,12 @@ export class App {
     save.addEventListener('click', () => {
       const url = target();
       native.setDevServer?.(url);
-      // Deliberately not reloading here: the setting is read at launch, and a
-      // reload from inside the page that just saved it is how it gets lost.
-      state.textContent = 'Saved ' + url + '. Close and reopen Dot.';
+      // Saved before the restart is asked for, and read back in onCreate, so
+      // the ordering that used to lose the setting cannot happen.
+      native.setReturnTo?.('development');
+      state.textContent = 'Saved ' + url + '. Restarting…';
+      if (native.restartApp) window.setTimeout(() => native.restartApp?.(), 250);
+      else state.textContent = 'Saved ' + url + '. Close and reopen Dot.';
     });
     host.appendChild(save);
 
@@ -1382,7 +1419,10 @@ export class App {
     const revert = button('toggle', 'Use the installed copy');
     revert.addEventListener('click', () => {
       native.setDevServer?.('');
-      state.textContent = 'Saved. Close and reopen Dot to use the installed copy.';
+      native.setReturnTo?.('development');
+      state.textContent = 'Reverting…';
+      if (native.restartApp) window.setTimeout(() => native.restartApp?.(), 250);
+      else state.textContent = 'Saved. Close and reopen Dot to use the installed copy.';
     });
     host.appendChild(revert);
 
