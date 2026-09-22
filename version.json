@@ -1,5 +1,5 @@
 {
-  "version": "fc00aeb",
+  "version": "75b03c2",
   "bundle": "bundle.js",
-  "notes": "Load the first track while the queue is still being read"
+  "notes": "Report which WebView is rendering Dot, and what else could"
 }
