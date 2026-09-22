@@ -1163,6 +1163,7 @@ button:focus-visible, input:focus-visible {
     var BUNDLE = 'dot.ota.bundle.v1';
     var VERSION = 'dot.ota.version.v1';
     var SENTINEL = 'dot.ota.booting.v1';
+    var FOR_APP = 'dot.ota.forapp.v1';
 
     function packaged() {
       var s = document.createElement('script');
@@ -1175,6 +1176,21 @@ button:focus-visible, input:focus-visible {
     try {
       version = localStorage.getItem(VERSION);
       code = localStorage.getItem(BUNDLE);
+
+      // A newer shell has been installed since this bundle was downloaded, so
+      // the copy packaged inside it is the newer of the two. Without this the
+      // downloaded one wins forever, and installing an APK updates the native
+      // side while the web side stays where it was — which is indistinguishable
+      // from the APK not having installed at all.
+      if (code && window.DotNative && window.DotNative.appVersionCode) {
+        var now = String(window.DotNative.appVersionCode());
+        if (localStorage.getItem(FOR_APP) !== now) {
+          localStorage.removeItem(BUNDLE);
+          localStorage.removeItem(VERSION);
+          localStorage.removeItem(FOR_APP);
+          code = null;
+        }
+      }
 
       // The last launch from this build never finished starting up.
       if (code && localStorage.getItem(SENTINEL) === version) {
@@ -1207,6 +1223,7 @@ button:focus-visible, input:focus-visible {
         localStorage.removeItem(BUNDLE);
         localStorage.removeItem(VERSION);
         localStorage.removeItem(SENTINEL);
+        localStorage.removeItem(FOR_APP);
       } catch (e2) {
         /* nothing useful to do */
       }

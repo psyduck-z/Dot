@@ -22,6 +22,16 @@ const KEY = {
   /** Set before a cached bundle runs, cleared once the app is alive. */
   sentinel: 'dot.ota.booting.v1',
   url: 'dot.ota.url.v1',
+  /**
+   * The shell's versionCode when this bundle was downloaded.
+   *
+   * A downloaded bundle always won over the packaged one, with nothing
+   * comparing them — so installing a newer APK changed the shell while the app
+   * carried on running the web layer from before it. Native work would land and
+   * the code that used it would not, which looked exactly like the APK never
+   * having installed.
+   */
+  forApp: 'dot.ota.forapp.v1',
 } as const;
 
 /**
@@ -201,6 +211,9 @@ export async function checkForUpdate(): Promise<UpdateStatus> {
 
   write(KEY.bundle, code);
   write(KEY.version, manifest.version);
+  // Which shell this bundle was fetched for, so a later APK can tell that this
+  // copy is older than the one it brought with it.
+  write(KEY.forApp, String(nativeVersion()));
 
   return {
     current,
