@@ -1,5 +1,7 @@
 {
-  "version": "ef48b6f",
+  "version": "3d3181b",
   "bundle": "bundle.js",
-  "notes": "Sign every build with the same key, so updates can actually install"
+  "notes": "Let the updater deliver the app itself, not only the bundle",
+  "apk": "dot.apk",
+  "apkVersion": 67
 }
