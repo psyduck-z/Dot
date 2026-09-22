@@ -1,5 +1,5 @@
 {
-  "version": "c73afe4",
+  "version": "faa4414",
   "bundle": "bundle.js",
-  "notes": "Report a warm CPU figure next to the cold one"
+  "notes": "Say why the WebView line is missing instead of hiding it"
 }
