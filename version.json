@@ -1,7 +1,7 @@
 {
-  "version": "3d3181b",
+  "version": "5bf226a",
   "bundle": "bundle.js",
-  "notes": "Let the updater deliver the app itself, not only the bundle",
+  "notes": "Stop requesting the permission that got the APK blocked as harmful",
   "apk": "dot.apk",
-  "apkVersion": 67
+  "apkVersion": 68
 }
