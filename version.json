@@ -1,5 +1,5 @@
 {
-  "version": "57aba83",
+  "version": "3798e58",
   "bundle": "bundle.js",
-  "notes": "Keep music on music, and size the Shorts stage by measuring it"
+  "notes": "Report the WebView version and a CPU figure in Settings"
 }
