@@ -3,6 +3,7 @@ import './compat.ts';
 
 import { App } from './app.ts';
 import { markBootSuccessful } from './updater.ts';
+import { startMirror } from './remote.ts';
 
 const root = document.getElementById('app');
 
@@ -15,4 +16,6 @@ void app.start().then(() => {
   // Clears the boot sentinel. Until this runs, the downloaded build this
   // launched from is considered untrusted and will be discarded next time.
   markBootSuccessful();
+  // No-op unless Dot was served over plain HTTP, which only the dev server is.
+  startMirror();
 });

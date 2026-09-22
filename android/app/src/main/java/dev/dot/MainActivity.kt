@@ -16,6 +16,7 @@ import android.widget.FrameLayout
 import android.app.Activity
 import androidx.webkit.WebViewAssetLoader
 import androidx.webkit.WebViewCompat
+import android.content.Context
 
 /**
  * The whole app is a WebView. The UI, the recommender and the storage all live
@@ -34,6 +35,12 @@ import androidx.webkit.WebViewCompat
  * youtube.com and googleapis.com load normally.
  */
 class MainActivity : Activity() {
+
+    private companion object {
+        /** Where the app lives when it is not pointed at a development machine. */
+        const val PACKAGED = "https://appassets.androidplatform.net/assets/index.html"
+        const val KEY_DEV_URL = "devUrl"
+    }
 
     private lateinit var webView: WebView
     private var fullscreenView: View? = null
@@ -71,6 +78,26 @@ class MainActivity : Activity() {
                     view: WebView,
                     request: WebResourceRequest
                 ): WebResourceResponse? = assetLoader.shouldInterceptRequest(request.url)
+
+                /**
+                 * A dev server that is not there must not leave a blank screen.
+                 *
+                 * This device has no browser, no USB and no way to clear app
+                 * data, so a build pointed at a laptop that has since been shut
+                 * down would be unrecoverable. Any failure loading the main
+                 * frame falls back to the packaged app and forgets the address,
+                 * which turns bricking it into an inconvenience.
+                 */
+                override fun onReceivedError(
+                    view: WebView,
+                    request: WebResourceRequest,
+                    error: android.webkit.WebResourceError
+                ) {
+                    if (!request.isForMainFrame) return
+                    if (view.url?.startsWith("https://appassets.") == true) return
+                    prefs().edit().remove(KEY_DEV_URL).apply()
+                    view.loadUrl(PACKAGED)
+                }
             }
 
             // The YouTube player asks to go fullscreen; without a chrome client
@@ -105,8 +132,17 @@ class MainActivity : Activity() {
 
         webView.addJavascriptInterface(DotBridge(), "DotNative")
         setContentView(webView)
-        webView.loadUrl("https://appassets.androidplatform.net/assets/index.html")
+
+        // A dev server address, when one has been set, so changes can be tried
+        // on the watch without building and installing anything. Plain HTTP and
+        // a single origin, which is what lets the page talk to that machine at
+        // all: served from appassets it is an HTTPS page, and a request from
+        // there to a http:// address on the LAN is mixed content and blocked.
+        val dev = prefs().getString(KEY_DEV_URL, null)
+        webView.loadUrl(if (dev.isNullOrBlank()) PACKAGED else dev)
     }
+
+    private fun prefs() = getSharedPreferences("dot", Context.MODE_PRIVATE)
 
     /**
      * What the web layer can ask the shell for.
@@ -190,6 +226,24 @@ class MainActivity : Activity() {
                 "\",\"version\":\"" + (active?.versionName ?: "unknown") +
                 "\",\"others\":[" + others + "]}"
         }
+
+        /**
+         * Points the app at a dev server, or back at the packaged build.
+         *
+         * Takes effect on the next launch rather than immediately: reloading
+         * out from under the code that asked for it is a good way to lose the
+         * setting that was being saved.
+         */
+        @JavascriptInterface
+        fun setDevServer(url: String) {
+            val cleaned = url.trim()
+            val editor = prefs().edit()
+            if (cleaned.isEmpty()) editor.remove(KEY_DEV_URL) else editor.putString(KEY_DEV_URL, cleaned)
+            editor.apply()
+        }
+
+        @JavascriptInterface
+        fun getDevServer(): String = prefs().getString(KEY_DEV_URL, "") ?: ""
 
         @JavascriptInterface
         fun setKeepAwake(on: Boolean) {

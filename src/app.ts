@@ -206,6 +206,8 @@ declare global {
       setKeepAwake(on: boolean): void;
       setBrightness(level: number): void;
       webViewInfo?(): string;
+      setDevServer?(url: string): void;
+      getDevServer?(): string;
     };
   }
 }
@@ -1226,6 +1228,48 @@ export class App {
 
   /** Everything configurable. Separated from Library so neither screen is
    *  a long scroll of unrelated concerns. */
+  /**
+   * Points the watch at a development machine instead of its own copy.
+   *
+   * This device has no USB, no developer options and no browser, so there is
+   * otherwise no way to try a change on it without building an APK or waiting
+   * for an over-the-air update. Loading the app from a laptop on the same WiFi
+   * gives a save-and-reload loop, and — because it is then a plain HTTP page
+   * rather than one served from appassets — lets the app reach that machine at
+   * all, which is what the screen mirroring needs.
+   *
+   * Only appears inside the Android shell, and only when that shell is new
+   * enough to honour it.
+   */
+  private buildDevServer(host: HTMLElement): void {
+    const native = window.DotNative;
+    if (!native?.setDevServer || !native.getDevServer) return;
+
+    host.appendChild(el('h2', 'shelf-title', 'Development'));
+    host.appendChild(
+      el('p', 'muted', 'Load Dot from a computer on this network instead of from the watch. Blank uses the installed copy.'),
+    );
+
+    const field = el('input', 'slider') as HTMLInputElement;
+    field.type = 'text';
+    field.placeholder = 'http://192.168.1.10:5174';
+    field.value = native.getDevServer() ?? '';
+    host.appendChild(field);
+
+    const state = el('p', 'muted', '');
+    const save = button('toggle', 'Save and restart');
+    save.addEventListener('click', () => {
+      native.setDevServer?.(field.value);
+      // Deliberately not reloading here: the setting is read at launch, and a
+      // reload from inside the page that just saved it is how it gets lost.
+      state.textContent = field.value.trim()
+        ? 'Saved. Close and reopen Dot to load from there.'
+        : 'Saved. Close and reopen Dot to use the installed copy.';
+    });
+    host.appendChild(save);
+    host.appendChild(state);
+  }
+
   private buildSettings(host: HTMLElement): void {
     host.appendChild(el('h1', 'greeting', 'Settings'));
 
@@ -1489,6 +1533,8 @@ export class App {
     host.appendChild(el('h2', 'shelf-title', 'Taste model'));
     this.statsBox = el('div', 'stats');
     host.appendChild(this.statsBox);
+
+    this.buildDevServer(host);
 
     const reset = button('danger', 'Forget everything');
     reset.addEventListener('click', () => {
