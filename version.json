@@ -1,5 +1,5 @@
 {
-  "version": "58fc40c",
+  "version": "0dc04d3",
   "bundle": "bundle.js",
-  "notes": "Bake in the dev machine's address and ask only for the port"
+  "notes": "Allow cleartext in debug builds, and restart straight back to Development"
 }
