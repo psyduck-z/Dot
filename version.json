@@ -1,5 +1,5 @@
 {
-  "version": "8285e41",
+  "version": "fc00aeb",
   "bundle": "bundle.js",
-  "notes": "Cache the work that was being redone, and fix the sim's shuffle"
+  "notes": "Load the first track while the queue is still being read"
 }
