@@ -1,5 +1,5 @@
 {
-  "version": "75b03c2",
+  "version": "c73afe4",
   "bundle": "bundle.js",
-  "notes": "Report which WebView is rendering Dot, and what else could"
+  "notes": "Report a warm CPU figure next to the cold one"
 }
