@@ -35,6 +35,7 @@ const POLL_MINIMAL_MS = 2000;
 /* The IFrame API defines a global; these are the parts we use. */
 interface YtPlayer {
   loadVideoById(options: { videoId: string; suggestedQuality?: string }): void;
+  cueVideoById(options: { videoId: string; suggestedQuality?: string }): void;
   setPlaybackQuality(quality: string): void;
   unloadModule(name: string): void;
   loadModule(name: string): void;
@@ -135,6 +136,15 @@ export class YouTubeEngine implements PlaybackEngine {
   private pollMs = POLL_VISIBLE_MS;
   /** Duration is fixed for a video; asking every tick was a wasted call. */
   private knownDuration = 0;
+  /** The video cue() last handed the player, if it has not been consumed. */
+  private cuedHandle: string | null = null;
+  /** Whether the track now loaded was already cued when it was asked for. */
+  private servedFromCue = false;
+
+  /** For the start-timing readout, so a preloaded start is distinguishable. */
+  wasServedFromCue(): boolean {
+    return this.servedFromCue;
+  }
   /** The video captions were last silenced for. */
   private silencedFor: string | null = null;
   private ready: Promise<YtPlayer> | null = null;
@@ -169,6 +179,27 @@ export class YouTubeEngine implements PlaybackEngine {
   /** Whether the player finished building before it was first needed. */
   isWarm(): boolean {
     return this.player !== null;
+  }
+
+  /**
+   * Loads a video into the player without starting it.
+   *
+   * Cueing does the expensive half of a play — fetching the video's
+   * configuration and filling the initial buffer — and the expensive half is
+   * all of it here: on this hardware the gap between asking for a video and
+   * hearing it is nearly seven seconds, essentially none of which is ours. Doing
+   * that while the queue is merely sitting on screen means a tap on the first
+   * track has almost nothing left to wait for.
+   *
+   * It is a hint, not a promise. If the guess was wrong, load() finds the player
+   * holding a different video and proceeds exactly as it did before.
+   */
+  async cue(handle: string): Promise<void> {
+    const player = await this.ensurePlayer();
+    if (this.track) return; // something is already playing; leave it alone
+    warmConnections();
+    player.cueVideoById({ videoId: handle, suggestedQuality: 'small' });
+    this.cuedHandle = handle;
   }
 
   prewarm(): void {
@@ -232,6 +263,15 @@ export class YouTubeEngine implements PlaybackEngine {
                 }
               },
               onError: (e: { data: number }) => {
+                // With nothing playing, the only thing the player can be
+                // holding is a cue — a guess at what might be tapped next. A
+                // guess that turns out to be unembeddable is not something to
+                // interrupt someone with; drop it and let the real play report
+                // it, if that track is ever actually asked for.
+                if (this.track === null) {
+                  this.cuedHandle = null;
+                  return;
+                }
                 // 101 and 150 both mean embedding is disabled for that video,
                 // which is common for major-label uploads.
                 const message =
@@ -332,6 +372,18 @@ export class YouTubeEngine implements PlaybackEngine {
     this.host.hidden = false;
     const player = await this.ensurePlayer();
     warmConnections();
+
+    // If this is the track that was cued, the player is already holding it and
+    // reloading would throw that work away and pay for it twice. Confirmed
+    // against the player rather than trusted: the cue may never have landed.
+    const ready =
+      this.cuedHandle === handle && player.getVideoData()?.video_id === handle;
+    this.cuedHandle = null;
+    this.servedFromCue = ready;
+    if (ready) {
+      this.silenceCaptions();
+      return;
+    }
 
     // A watch screen is a couple of hundred pixels wide and most of this is
     // listened to rather than watched, so the largest stream the player would

@@ -2035,7 +2035,9 @@ export class App {
   }
 
   private paintTiming(): void {
-    const warm = this.ytEngine.isWarm() ? 'warm' : 'cold';
+    const warm =
+      (this.ytEngine.isWarm() ? 'warm' : 'cold') +
+      (this.ytEngine.wasServedFromCue() ? ' · preloaded' : '');
     if (this.npTiming) {
       this.npTiming.textContent = this.lastTiming ? this.lastTiming + ' · ' + warm : '';
     }
@@ -2276,9 +2278,33 @@ export class App {
             : 'Add a YouTube key in Settings to start.',
         );
       }
+      this.cueAhead();
     } finally {
       this.refilling = false;
     }
+  }
+
+  /**
+   * Hands the player the track most likely to be tapped next, so it can load it
+   * during the time the queue is just sitting on screen being read.
+   *
+   * Only while nothing is playing. Mid-session there is no spare player to
+   * preload into — the one we have is busy — so this buys the first tap of a
+   * session and nothing else. That is the tap worth buying: it is the one
+   * spent staring at a still screen wondering whether the app has hung.
+   */
+  private cueAhead(): void {
+    if (this.player.track) return;
+    const head = this.queue[0];
+    if (!head || head.track.sourceId !== 'youtube') return;
+    // Resolved the same way the real play resolves it, so the handle the player
+    // is cued with is exactly the one it would otherwise be loaded with.
+    void this.youtube
+      .resolveStreamUrl(head.track.id)
+      .then((handle) => (handle ? this.ytEngine.cue(handle) : undefined))
+      .catch(() => {
+        // A failed guess costs nothing; the real play will load it properly.
+      });
   }
 
   /**
