@@ -1,5 +1,5 @@
 {
-  "version": "24d9f09",
+  "version": "a2abe55",
   "bundle": "bundle.js",
-  "notes": "Ignore locally downloaded APKs"
+  "notes": "Mirror the watch's screen, and let it run from a dev machine"
 }
