@@ -1,7 +1,7 @@
 {
-  "version": "18155cc",
+  "version": "bef7952",
   "bundle": "bundle.js",
-  "notes": "Ship a release build, to stop looking like a dropper",
+  "notes": "Drop the in-app installer",
   "apk": "dot.apk",
-  "apkVersion": 69
+  "apkVersion": 70
 }
