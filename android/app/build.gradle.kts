@@ -73,8 +73,11 @@ android {
 }
 
 dependencies {
-    // The only dependency. WebViewAssetLoader is what lets the app serve its
-    // own files over https instead of file://, which the YouTube IFrame player
-    // requires — see MainActivity.
+    // WebViewAssetLoader is what lets the app serve its own files over https
+    // instead of file://, which the YouTube IFrame player requires — see
+    // MainActivity.
     implementation("androidx.webkit:webkit:1.11.0")
+    // FileProvider. An APK handed to the installer has to arrive as a
+    // content:// URI — a file:// one is rejected outright on Android 7 and up.
+    implementation("androidx.core:core:1.13.1")
 }

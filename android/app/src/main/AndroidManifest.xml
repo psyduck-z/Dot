@@ -4,6 +4,16 @@
     <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
     <uses-permission android:name="android.permission.WAKE_LOCK" />
+    <!-- So the app can hand its own APK to the system installer. Confirming
+         the install is still Android's dialog and the user's decision.
+
+         This is the permission Play Protect weighs most heavily, because
+         internet access plus installing other apps is the shape of a dropper.
+         It cannot be avoided for an in-app update, so the other signals are
+         reduced instead: the published build is a release build rather than a
+         debuggable one, signed with a stable key rather than a throwaway
+         "Android Debug" certificate. -->
+    <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
 
     <!-- These watches report no touchscreen or no telephony on some firmware;
          declaring nothing required keeps the APK installable on all of them. -->
@@ -28,5 +38,17 @@
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
         </activity>
+
+        <!-- Hands the downloaded APK to the installer as a content:// URI,
+             scoped to the one directory updates are written to. -->
+        <provider
+            android:name="androidx.core.content.FileProvider"
+            android:authorities="${applicationId}.files"
+            android:exported="false"
+            android:grantUriPermissions="true">
+            <meta-data
+                android:name="android.support.FILE_PROVIDER_PATHS"
+                android:resource="@xml/file_paths" />
+        </provider>
     </application>
 </manifest>

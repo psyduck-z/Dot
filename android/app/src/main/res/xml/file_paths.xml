@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  The one directory the installer is handed a URI into. A downloaded APK is
+  written here and nowhere else, so nothing of the app's own storage is exposed
+  along with it.
+-->
+<paths>
+    <files-path name="updates" path="updates/" />
+</paths>
