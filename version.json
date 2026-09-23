@@ -1,7 +1,7 @@
 {
-  "version": "42ec04e",
+  "version": "7a486d6",
   "bundle": "bundle.js",
-  "notes": "Show a channel's Shorts the way the Shorts tab shows them",
+  "notes": "Stop the title cards when the video starts",
   "apk": "dot.apk",
-  "apkVersion": 93
+  "apkVersion": 94
 }
