@@ -74,6 +74,25 @@ export function crashedRecently(withinMs = 10 * 60 * 1000): boolean {
   return recentCrashes().some((c) => now - c.at < withinMs);
 }
 
+/**
+ * Track ids the app was loading when it died.
+ *
+ * A video that takes the renderer with it does so reliably — the same Short
+ * killed it four times running, because it sits first in the feed and so is
+ * the one tapped first. Something about that particular file is more than the
+ * decoder on this hardware will survive, and no amount of care elsewhere in the
+ * app changes that. It can only be learned and avoided.
+ */
+export function crashedTrackIds(): string[] {
+  const ids: string[] = [];
+  for (const crash of recentCrashes()) {
+    // "loading short youtube:abc123" — the id is whatever follows the source.
+    const match = /(youtube:[A-Za-z0-9_-]{6,})/.exec(crash.doing);
+    if (match?.[1]) ids.push(match[1]);
+  }
+  return ids;
+}
+
 export function clearCrashes(): void {
   try {
     window.localStorage.removeItem(KEY_LOG);

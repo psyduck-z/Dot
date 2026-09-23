@@ -19,6 +19,8 @@
  * brings commands back.
  */
 
+import { recentCrashes } from './crash.ts';
+
 const TICK_MS = 800;
 const RELAY_PORT = 5175;
 /**
@@ -287,6 +289,11 @@ export function startMirror(): void {
           // — both look like a gap in the snapshots and only one of them means
           // the device is now running different code.
           sent: status.sent,
+          // Reported so a restart can be told apart from a reload without
+          // guessing. A tick counter going back to zero means the page
+          // restarted; only this says whether it was pushed.
+          crashes: recentCrashes().length,
+          lastCrash: recentCrashes().slice(-1)[0]?.doing,
           log: log.length > 0 ? log.slice() : undefined,
           // Rough memory pressure, where the browser will say. A renderer that
           // is about to be killed for using too much is otherwise completely

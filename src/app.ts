@@ -17,7 +17,7 @@ import { TasteModel, labelFor } from './reco/model.ts';
 import { buildQueue, exploreRate, type RankedTrack } from './reco/queue.ts';
 import { contextBucket, featurize, hashKey, normalizeTag } from './reco/features.ts';
 import * as store from './store.ts';
-import { crashContext, recentCrashes, clearCrashes, crashedRecently } from './crash.ts';
+import { crashContext, recentCrashes, clearCrashes, crashedRecently, crashedTrackIds } from './crash.ts';
 import { mirrorStatus } from './remote.ts';
 import {
   checkForUpdate,
@@ -376,6 +376,8 @@ export class App {
   private devTimer = 0;
   /** Defers the preload until the app has stopped being busy. */
   private cueTimer = 0;
+  /** Width the Shorts stage is already set to; 0 when it is not in use. */
+  private shortsStageWidth = 0;
   private handedOffAt = 0;
   private lastTiming = '';
   private timingLine?: HTMLElement;
@@ -460,6 +462,16 @@ export class App {
   }
 
   async start(): Promise<void> {
+    // Anything that was loading when the app last died is put away before the
+    // feed is built, so it cannot be offered again. One Short killed the
+    // renderer four times in a row simply by being first in the list.
+    for (const id of crashedTrackIds()) {
+      if (!this.hidden.has(id as TrackId)) {
+        this.hidden = store.hideTrack(id as TrackId);
+        console.info('dot: hiding ' + id + ', the app died loading it');
+      }
+    }
+
     // Left by the shell before it restarted, and readable here even though the
     // restart changed origin — which localStorage would not have survived.
     const returnTo = window.DotNative?.consumeReturnTo?.() ?? '';
@@ -715,8 +727,10 @@ export class App {
         this.renderHome();
         if (kind === 'short') void this.ensureShorts();
         // The other surface's first track is now the one most likely to be
-        // tapped, so it is the one worth having ready — once the switch itself
-        // has finished rendering.
+        // tapped, so it is worth having ready — once the switch has finished
+        // rendering. This was removed while hunting the Shorts crash, on the
+        // theory that a second preload was responsible. It was not: the crash
+        // happened just as readily with preloading disabled entirely.
         window.clearTimeout(this.cueTimer);
         this.cueTimer = window.setTimeout(() => this.cueAhead(), CUE_DELAY_MS);
       });
@@ -2454,12 +2468,34 @@ export class App {
    * space. Measuring is exact. Driven from everywhere the layout can settle,
    * because a single call after a class change reads the old height.
    */
+  /**
+   * Sizes the Shorts stage, and does nothing at all if it is already that size.
+   *
+   * The guard is the point. This is called from six places, one of which is the
+   * player reaching PLAYING — so the stage was being resized in the middle of
+   * loading a video. Resizing the host resizes the iframe inside it, the player
+   * treats that as its dimensions having changed, and answers by fetching a
+   * stream to match: a second video decoding alongside the one already in
+   * flight, on a device that gets killed for precisely that.
+   *
+   * It reproduced as a renderer kill on the first Short of every session and
+   * nowhere else, which is exactly when the size actually changes. The crash
+   * record named this function; four earlier guesses at the cause — the
+   * preload, the stream quality, a stale buffer, the iframe's own attributes —
+   * were all wrong.
+   *
+   * renderTrack already sizes the stage before the load begins, so the correct
+   * size is in place by the time any of this matters.
+   */
   private fitShortsStage(): void {
     if (!this.np.classList.contains('shorts')) {
-      this.ytHost.style.width = '';
-      this.ytHost.style.marginLeft = '';
-      this.ytHost.style.left = '';
-      this.ytHost.style.right = '';
+      if (this.shortsStageWidth !== 0) {
+        this.ytHost.style.width = '';
+        this.ytHost.style.marginLeft = '';
+        this.ytHost.style.left = '';
+        this.ytHost.style.right = '';
+        this.shortsStageWidth = 0;
+      }
       return;
     }
 
@@ -2470,16 +2506,22 @@ export class App {
     const width = Math.min(Math.round((height * 9) / 16), stage - 2 * RAIL_WIDTH);
     if (width < 40) return;
 
+    // Already this size: touching the styles anyway is what caused the crash.
+    if (width === this.shortsStageWidth) return;
+    this.shortsStageWidth = width;
+
     this.ytHost.style.left = '50%';
     this.ytHost.style.right = 'auto';
     this.ytHost.style.width = width + 'px';
     this.ytHost.style.marginLeft = Math.round(-width / 2) + 'px';
 
-    const frame = this.ytHost.querySelector('iframe');
-    if (frame) {
-      frame.setAttribute('width', String(width));
-      frame.setAttribute('height', String(height));
-    }
+    // The iframe is deliberately left alone. It is created at 100% of this
+    // host, so sizing the host is enough, and writing width and height
+    // attributes on top of that told the player its dimensions had changed
+    // mid-load — which it answers by fetching a stream to match. That is a
+    // second video decoding alongside the first, it happened exactly once per
+    // session at the first Short opened, and that is exactly when the renderer
+    // was being killed.
   }
 
   private openNowPlaying(): void {
@@ -2778,6 +2820,9 @@ export class App {
     this.startedAt = Date.now();
     this.handedOffAt = 0;
     // The likeliest last thing this app ever does, so it is worth naming.
+    // One note, not a trail. A step-by-step trail found the crash — it named
+    // fitShortsStage after four wrong guesses — but five storage writes per
+    // play cost up to three seconds of the very thing being measured.
     crashContext('loading ' + ranked.track.kind + ' ' + ranked.track.id);
     this.startLoadingCaptions();
 

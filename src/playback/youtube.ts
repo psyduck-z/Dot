@@ -41,6 +41,10 @@ const IFRAME_API = 'https://www.youtube.com/iframe_api';
  * A request, not an instruction — the player may serve something else.
  */
 function qualityFor(kind: string | undefined): string {
+  // Shorts are watched rather than listened to, so they keep the larger
+  // stream. They were briefly dropped to 'tiny' while hunting a crash that
+  // turned out to be a resize, not a decode, and there is no reason to pay for
+  // that guess in sharpness.
   return kind === 'short' ? 'small' : 'tiny';
 }
 
@@ -228,6 +232,20 @@ export class YouTubeEngine implements PlaybackEngine {
     // loadVideoById does fetch it. It also starts playing, which is why the
     // volume goes to zero first and the state handler pauses it the instant the
     // media is running.
+    // Whatever is already loaded goes first. Switching surfaces preloads a
+    // second video within seconds of the first, and tapping one then makes a
+    // third — three streams' worth of decode buffers inside half a minute, on a
+    // device that gets killed for exactly that. stopVideo releases the current
+    // one rather than leaving it to be displaced.
+    if (this.cuedHandle && this.cuedHandle !== handle) {
+      try {
+        player.stopVideo();
+        console.info('dot: released ' + this.cuedHandle + ' before preloading again');
+      } catch {
+        /* nothing loaded to release */
+      }
+    }
+
     this.preloading = true;
     try {
       player.setVolume(0);
@@ -455,8 +473,20 @@ export class YouTubeEngine implements PlaybackEngine {
       return;
     }
 
-    // Whatever was being preloaded is not what was asked for.
+    // Whatever was being preloaded is not what was asked for, and it is still
+    // sitting in the player with its buffers. Loading over the top of it
+    // reproduced a renderer kill every time: always the first Short tapped
+    // while a preloaded music track was held, and never once the preload had
+    // stood down. Released first, so only one stream is ever resident.
     this.preloading = false;
+    if (this.cuedHandle !== null || holding !== '(none)') {
+      try {
+        player.stopVideo();
+        console.info('dot: released ' + holding + ' before loading ' + handle);
+      } catch {
+        /* nothing loaded to release */
+      }
+    }
 
     // The initial buffer the player has to fill before any sound is
     // proportional to the stream it picks, so asking small is asking for a
