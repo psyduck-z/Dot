@@ -1,7 +1,7 @@
 {
-  "version": "6009eb9",
+  "version": "c330706",
   "bundle": "bundle.js",
-  "notes": "Fit the feed to the screen it is actually on",
+  "notes": "Stop offering videos the player cannot show",
   "apk": "dot.apk",
-  "apkVersion": 81
+  "apkVersion": 82
 }
