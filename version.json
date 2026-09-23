@@ -1,7 +1,7 @@
 {
-  "version": "22e3668",
+  "version": "0753de2",
   "bundle": "bundle.js",
-  "notes": "Stop the next button leaving the music paused and silent",
+  "notes": "Drop the second button that did what the first one did",
   "apk": "dot.apk",
-  "apkVersion": 85
+  "apkVersion": 86
 }
