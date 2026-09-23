@@ -2490,8 +2490,15 @@ export class App {
   /** Records how long the two halves of this track start took. */
   private markStarted(): void {
     crashContext('playing');
-    if (this.startedAt <= 0) return;
+
+    // Before the guard, not after it. Reaching here means the player is
+    // running, which is the whole reason the cards exist — but the guard below
+    // returns whenever no start is being timed, and a second PLAYING event, a
+    // resume, or a track already rolling from the preload all arrive that way.
+    // The cards carried on over a video that was playing.
     this.stopLoadingCaptions();
+
+    if (this.startedAt <= 0) return;
     const now = Date.now();
     const app = (this.handedOffAt || now) - this.startedAt;
     const player = now - (this.handedOffAt || this.startedAt);
@@ -2527,6 +2534,14 @@ export class App {
   }
 
   private showBufferCard(): void {
+    // Nothing is being waited for. A backstop against every path that might
+    // start playing without telling this code to stop: one missed call should
+    // cost a card, not a permanent slideshow over a playing video.
+    if (this.player.playing) {
+      this.stopLoadingCaptions();
+      return;
+    }
+
     const name = this.bufferOrder[this.bufferAt % this.bufferOrder.length];
     if (!name) return;
     this.bufferAt++;
@@ -2550,9 +2565,23 @@ export class App {
     voice.addEventListener('error', next);
     window.setTimeout(next, BUFFER_MAX_CARD_MS);
 
-    void voice.play().catch(() => {
-      // Blocked or unplayable: the picture still carries the joke.
-    });
+    void voice
+      .play()
+      .then(() => {
+        // play() resolves after the fact, so a card stopped while it was still
+        // starting would begin anyway — a recording talking over a video that
+        // had already started.
+        if (this.bufferVoice !== voice) {
+          try {
+            voice.pause();
+          } catch {
+            /* already gone */
+          }
+        }
+      })
+      .catch(() => {
+        // Blocked or unplayable: the picture still carries the joke.
+      });
   }
 
   private stopBufferVoice(): void {
