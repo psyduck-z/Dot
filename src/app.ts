@@ -2567,6 +2567,9 @@ export class App {
     if (!track) return;
 
     this.miniBar.hidden = false;
+    // Marks that the mini player is taking a strip off the bottom, so a short
+    // screen can give up the greeting to pay for it.
+    this.root.classList.add('has-mini');
     this.miniTitle.textContent = track.title;
     this.miniArtist.textContent = track.artist;
     paintArt(this.miniArt, ytThumb(track.artworkUrl, 'default'), track.title, '♪');

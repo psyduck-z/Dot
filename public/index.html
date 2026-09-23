@@ -1098,6 +1098,20 @@ body {
   .np-controls { margin-top: 4px; }
   /* Secondary, and the only thing here allowed below the fold. */
   .np-hide { margin-top: 6px; }
+
+  /* The mini player and the header together were leaving one row of the feed
+     visible on a 349px screen — and the mini player is on screen whenever
+     anything is playing, which is most of the time. */
+  .mini { margin: 0 8px 3px; padding: 5px 8px; }
+  .mini-art { width: 32px; height: 32px; margin-right: 8px; }
+  .greeting { margin-bottom: 6px; font-size: 19px; }
+  .endless { min-height: 38px; padding: 8px; margin-bottom: 8px; }
+  .shelf-title { margin: 8px 0 4px; }
+
+  /* "Good evening" is a welcome, and once something is playing the welcome has
+     been had. With the mini player up it was costing a row of the feed on a
+     screen that had one to give. */
+  .has-mini .greeting { display: none; }
 }
 
 .np-status { display: none; }
