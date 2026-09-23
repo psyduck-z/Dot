@@ -24,12 +24,13 @@ import path from 'node:path';
 
 const PORT = Number(process.env.RELAY_PORT ?? 5175);
 
-const BUNDLE = path.resolve(
-  path.dirname(fileURLToPath(import.meta.url)),
-  '..',
-  'public',
-  'bundle.js',
-);
+const PUBLIC = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', 'public');
+/**
+ * Both, because the stylesheet lives in index.html rather than the bundle. A
+ * stamp taken from bundle.js alone meant every change to the styling — which is
+ * most of what a layout pass consists of — silently failed to reach the device.
+ */
+const WATCHED = [path.join(PUBLIC, 'bundle.js'), path.join(PUBLIC, 'index.html')];
 
 /**
  * When the bundle was last written.
@@ -44,11 +45,15 @@ const BUNDLE = path.resolve(
  * clock, so the two machines' clocks never have to agree.
  */
 function bundleStamp() {
-  try {
-    return statSync(BUNDLE).mtimeMs;
-  } catch {
-    return 0;
+  let newest = 0;
+  for (const file of WATCHED) {
+    try {
+      newest = Math.max(newest, statSync(file).mtimeMs);
+    } catch {
+      /* a file that is not there cannot have changed */
+    }
   }
+  return newest;
 }
 
 let snapshot = null;
