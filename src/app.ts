@@ -438,6 +438,21 @@ export class App {
       onPlayEvent: (event) => this.recordEvent(event),
       onError: (message) => {
         this.stopLoadingCaptions();
+        const failed = this.player.track?.id;
+        // Named, because a track being dropped is invisible otherwise: the wait
+        // for every one that fails is charged to whichever track eventually
+        // plays, and from outside it just looks like a slow start.
+        console.info('dot: playback error — ' + message + ' — ' + (failed ?? 'unknown'));
+
+        // A video whose owner has disabled embedding will never play, so it is
+        // put away rather than offered again. The API says so up front and the
+        // feed now filters on it, but everything fetched before that field was
+        // read is still in the catalogue — and tapping one Short was costing
+        // two failed loads before a playable one, with the whole wait charged
+        // to the track that finally started.
+        if (failed && message.indexOf('cannot be embedded') >= 0) {
+          this.hidden = store.hideTrack(failed);
+        }
         this.setStatus(message + ' — skipping');
       },
       onTrackChange: (track) => this.renderTrack(track),

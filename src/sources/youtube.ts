@@ -56,7 +56,12 @@ interface YtVideo {
   contentDetails?: { duration?: string };
   statistics?: { viewCount?: string };
   /** `madeForKids` is YouTube's own designation, and the best signal there is. */
-  status?: { madeForKids?: boolean };
+  /**
+   * `embeddable` is false for uploads whose owner has disabled embedding,
+   * which is common for anything on a label. The API says so up front, and
+   * ignoring it meant discovering it only by trying to play the thing.
+   */
+  status?: { madeForKids?: boolean; embeddable?: boolean };
   /**
    * Embed dimensions follow the source video's orientation — how Shorts are
    * spotted. `embedHeight`/`embedWidth` are only returned when the request
@@ -153,6 +158,9 @@ function toTrack(video: YtVideo): Track | null {
     // the descriptors the recommender wants.
     tags: Array.isArray(snippet.tags) ? snippet.tags.slice(0, 15) : [],
     madeForKids: video.status?.madeForKids,
+    // Absent on responses that did not ask for `status`; only an explicit
+    // false is treated as a refusal, so a missing field never hides anything.
+    embeddable: video.status?.embeddable !== false,
     kind: classifyKind({
       title: snippet.title ?? '',
       artist: cleanArtist(snippet.channelTitle),
@@ -362,6 +370,12 @@ export class YouTubeSource implements MusicSource {
    */
   private playable(track: Track): boolean {
     if (track.duration <= 0) return false;
+
+    // The player cannot show these at all. They used to go into the queue
+    // anyway and fail on contact: tapping one Short meant loading three, two of
+    // which errored and auto-advanced, and the wait for all of that was charged
+    // to the track that eventually played.
+    if (track.embeddable === false) return false;
     if (track.kind === 'short') return track.duration <= 180;
 
     // Mixes and full albums used to be excluded here for being too long. That

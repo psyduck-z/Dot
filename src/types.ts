@@ -37,6 +37,8 @@ export interface Track {
    * filtered later, rather than only at the moment they were fetched.
    */
   madeForKids?: boolean;
+  /** False when the owner has disabled embedding, so the player cannot show it. */
+  embeddable?: boolean;
   /**
    * Which surface this belongs on. Decided locally by the source so the UI
    * never has to re-derive it, and so three tabs cost no extra API calls.
