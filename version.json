@@ -1,7 +1,7 @@
 {
-  "version": "b8277f7",
+  "version": "594da41",
   "bundle": "bundle.js",
-  "notes": "Record why the last session ended, so a crash leaves evidence",
+  "notes": "Recover from a dead renderer instead of dying with it",
   "apk": "dot.apk",
-  "apkVersion": 76
+  "apkVersion": 77
 }
