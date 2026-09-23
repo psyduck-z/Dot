@@ -212,6 +212,26 @@ function portOf(url: string): string {
  */
 const CUE_DELAY_MS = 4000;
 
+/**
+ * How far back "already played" reaches when filling the feed.
+ *
+ * Every track ever played used to be excluded — the whole history, eight
+ * hundred entries. The searches available on a given set of tags return much
+ * the same videos each time, so the pool ran dry: a refill reported "104 found,
+ * 92 already seen, 0 kept" and the feed said "Nothing here yet" on a working
+ * connection with nine tenths of the day's quota unspent.
+ *
+ * Eighty is a few hours of listening, which is long enough not to hear a song
+ * twice in a sitting and short enough that a modest catalogue still has
+ * something to offer. Dislikes and unplayable tracks are excluded separately
+ * and permanently; this is only about repetition.
+ */
+const RECENT_PLAY_WINDOW = 80;
+
+function recentlyPlayed(): TrackId[] {
+  return store.loadHistory().slice(-RECENT_PLAY_WINDOW);
+}
+
 /** Must match the rail width in the stylesheet. */
 const RAIL_WIDTH = 62;
 /** The only sections long enough to be worth hiding. */
@@ -771,7 +791,7 @@ export class App {
     // and queued again — the main source of Shorts repeating. Pushing straight
     // onto the queue also skipped buildQueue, so none of the artist-cap or
     // tag-variety rules had ever applied to Shorts at all.
-    const seen = new Set([...store.loadHistory(), ...this.hidden]);
+    const seen = new Set([...recentlyPlayed(), ...this.hidden]);
 
     // Re-rank only the Shorts. Feeding the whole queue through a ranking
     // capped at QUEUE_CAP let a big batch of Shorts crowd the music out
@@ -2682,7 +2702,7 @@ export class App {
         return false;
       });
 
-      const excluded = new Set([...store.loadHistory(), ...this.hidden]);
+      const excluded = new Set([...recentlyPlayed(), ...this.hidden]);
       this.lastFill = {
         fetched: pool.length,
         notMusic: pool.length - candidates.length,
@@ -2690,15 +2710,34 @@ export class App {
         kept: 0,
       };
 
-      this.queue = buildQueue(candidates, this.model, {
+      const options = {
         count: QUEUE_TARGET,
         discovery: this.exploreRateNow(),
         // History and hidden both suppress, but only one of them expires.
-        exclude: new Set([...store.loadHistory(), ...this.hidden]),
+        exclude: new Set([...recentlyPlayed(), ...this.hidden]),
         bucket: contextBucket(),
         fatigue: this.tagFatigue,
         previousTags: this.player.track?.tags.slice(0, 3) ?? [],
-      });
+      };
+      this.queue = buildQueue(candidates, this.model, options);
+
+      // Rather than show nothing, reach further back. A catalogue this size
+      // returns much the same videos for the same tags, so between recent plays
+      // and everything permanently put away there were runs of "104 found, 95
+      // already seen, 0 kept" — an empty feed, on a working connection, with
+      // nine tenths of the day's quota unspent and plenty of playable music
+      // sitting in the catalogue.
+      //
+      // Hearing something from a few hours ago is a far smaller problem than
+      // being told there is nothing here. Dislikes and unplayable tracks stay
+      // excluded; only the repetition rule gives way.
+      if (this.queue.length === 0 && candidates.length > 0) {
+        console.info('dot: feed empty after exclusions, allowing older plays back in');
+        this.queue = buildQueue(candidates, this.model, {
+          ...options,
+          exclude: new Set([...store.loadHistory().slice(-12), ...this.hidden]),
+        });
+      }
 
       this.mixInFamiliar();
 

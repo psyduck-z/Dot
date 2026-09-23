@@ -63,13 +63,21 @@ let commands = [];
 
 function body(req) {
   return new Promise((resolve) => {
-    let data = '';
+    // Collected as buffers and decoded once at the end. Appending each chunk to
+    // a string decodes it in isolation, so any character whose bytes happen to
+    // straddle a chunk boundary is destroyed — which showed up as the Shorts
+    // "next" arrow arriving as two replacement characters, and had me looking
+    // for a bug in the app when the source bytes were correct all along.
+    // Anything non-ASCII in a title or a diagnostic was at risk of the same.
+    const chunks = [];
+    let size = 0;
     req.on('data', (c) => {
-      data += c;
+      chunks.push(c);
+      size += c.length;
       // A runaway page should not be able to exhaust this process.
-      if (data.length > 4_000_000) req.destroy();
+      if (size > 4_000_000) req.destroy();
     });
-    req.on('end', () => resolve(data));
+    req.on('end', () => resolve(Buffer.concat(chunks).toString('utf8')));
   });
 }
 
