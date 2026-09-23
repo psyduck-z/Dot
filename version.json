@@ -1,7 +1,7 @@
 {
-  "version": "51e7123",
+  "version": "73cc1e2",
   "bundle": "bundle.js",
-  "notes": "Fit Now Playing on the screen it runs on, and put the hide button back",
+  "notes": "Give the feed back the space the header was taking",
   "apk": "dot.apk",
-  "apkVersion": 89
+  "apkVersion": 90
 }
