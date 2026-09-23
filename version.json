@@ -1,7 +1,7 @@
 {
-  "version": "0751aaf",
+  "version": "51e7123",
   "bundle": "bundle.js",
-  "notes": "Tell the player what to load before repainting the screen",
+  "notes": "Fit Now Playing on the screen it runs on, and put the hide button back",
   "apk": "dot.apk",
-  "apkVersion": 88
+  "apkVersion": 89
 }
