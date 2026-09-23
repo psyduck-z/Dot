@@ -1,7 +1,7 @@
 {
-  "version": "141ddf4",
+  "version": "d5da956",
   "bundle": "bundle.js",
-  "notes": "Reload the WebView directly instead of recreating the activity",
+  "notes": "Preload by loading the track, not by cueing it",
   "apk": "dot.apk",
-  "apkVersion": 74
+  "apkVersion": 75
 }
