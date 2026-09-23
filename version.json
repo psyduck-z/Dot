@@ -1,7 +1,7 @@
 {
-  "version": "c95167c",
+  "version": "4a8f957",
   "bundle": "bundle.js",
-  "notes": "Stop a stale downloaded bundle outliving the APK that replaced it",
+  "notes": "Make the development loop survive its own interruptions",
   "apk": "dot.apk",
-  "apkVersion": 72
+  "apkVersion": 73
 }
