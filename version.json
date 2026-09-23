@@ -1,7 +1,7 @@
 {
-  "version": "4a8f957",
+  "version": "141ddf4",
   "bundle": "bundle.js",
-  "notes": "Make the development loop survive its own interruptions",
+  "notes": "Reload the WebView directly instead of recreating the activity",
   "apk": "dot.apk",
-  "apkVersion": 73
+  "apkVersion": 74
 }
