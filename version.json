@@ -1,7 +1,7 @@
 {
-  "version": "c330706",
+  "version": "74806ae",
   "bundle": "bundle.js",
-  "notes": "Stop offering videos the player cannot show",
+  "notes": "Find the Shorts crash, and stop mistaking reloads for it",
   "apk": "dot.apk",
-  "apkVersion": 82
+  "apkVersion": 83
 }
