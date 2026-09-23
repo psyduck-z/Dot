@@ -2097,9 +2097,10 @@ export class App {
     this.npAdd.addEventListener('click', () => this.openPlaylistPicker());
     this.np.appendChild(this.npAdd);
 
-    const hide = button('np-hide', "Don't show this again");
-    hide.addEventListener('click', () => this.hideCurrent());
-    this.np.appendChild(hide);
+    // No second "Don't show this again". The circle-slash in the controls above
+    // already calls hideCurrent and carries "Never" as its label, so this was a
+    // full-width button doing exactly what the icon beside it does — on a
+    // screen with 349 pixels to spend.
 
     this.npLoading = el('p', 'np-loading', '');
     this.np.appendChild(this.npLoading);
