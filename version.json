@@ -1,7 +1,7 @@
 {
-  "version": "d5da956",
+  "version": "b8277f7",
   "bundle": "bundle.js",
-  "notes": "Preload by loading the track, not by cueing it",
+  "notes": "Record why the last session ended, so a crash leaves evidence",
   "apk": "dot.apk",
-  "apkVersion": 75
+  "apkVersion": 76
 }
