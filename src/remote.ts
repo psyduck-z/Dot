@@ -220,23 +220,7 @@ export function startMirror(): void {
         location.reload();
         return;
       }
-      if (command.click) {
-        const target = document.querySelector(command.click);
-        if (target instanceof HTMLElement) target.click();
-      }
-      // By what it says on it, which survives a rerender that renumbers
-      // everything and is how a person would describe the thing they mean.
-      if (command.text) {
-        const wanted = command.text.toLowerCase();
-        const all = document.querySelectorAll('button, a, .tile, .tab, .seg, .row');
-        for (let i = 0; i < all.length; i++) {
-          const el = all[i];
-          if (el instanceof HTMLElement && (el.textContent ?? '').toLowerCase().indexOf(wanted) >= 0) {
-            el.click();
-            break;
-          }
-        }
-      }
+
       if (command.scroll) {
         const el = command.scroll.sel ? document.querySelector(command.scroll.sel) : document.scrollingElement;
         if (el) el.scrollTop = command.scroll.top ?? 0;
