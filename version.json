@@ -1,7 +1,7 @@
 {
-  "version": "14b6b5f",
+  "version": "c26970d",
   "bundle": "bundle.js",
-  "notes": "Stop sending the watch half a megabyte of sourcemap",
+  "notes": "Show the title cards while a track loads",
   "apk": "dot.apk",
-  "apkVersion": 91
+  "apkVersion": 92
 }
