@@ -260,10 +260,18 @@ export function startMirror(): void {
       // serializing the document alongside it both slows the thing being
       // measured and distorts the measurement. The tick still goes — commands
       // and the timing readout still flow — it just stops carrying the DOM.
-      const loading = (document.querySelector('.np-loading')?.textContent ?? '').trim().length > 0;
+      //
+      // Detected from the title card rather than the old caption text, which no
+      // longer exists. Every fifth tick still sends it, so the loading screen
+      // can be looked at without paying for it on every one.
+      const card = document.querySelector('.np-buffer') as HTMLElement | null;
+      const loading =
+        (card !== null && !card.hidden) ||
+        (document.querySelector('.np-loading')?.textContent ?? '').trim().length > 0;
+      const peek = loading && status.sent % 5 === 0;
 
-      const html = loading ? '' : stripFrames(document.body);
-      const changed = !loading && html !== previous;
+      const html = loading && !peek ? '' : stripFrames(document.body);
+      const changed = (!loading || peek) && html !== previous;
       if (changed) previous = html;
 
       // An unchanged screen still has to check in. The tick is how commands

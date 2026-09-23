@@ -238,26 +238,42 @@ const RAIL_WIDTH = 62;
 const COLLAPSIBLE_SECTIONS = ['Music tags', 'Shorts topics'];
 
 /**
- * Captions for the wait while a track loads, in escalating tiers.
+ * Title cards for the wait while a track loads.
  *
- * A blank screen for seven seconds reads as broken; the same seven seconds
- * with something counting up reads as a joke the app is in on. The tiers are
- * picked by how long it has actually taken, and each has several options so
- * the same wait is not the same caption twice.
+ * Each name has a picture and a recording of the same line, prepared by hand
+ * and matched by filename. A blank screen for seven seconds reads as broken;
+ * the card and the voice read as a joke the app is in on.
+ *
+ * Shuffled per wait rather than escalating in order, so the same wait is not
+ * the same card twice.
  */
-const LOADING_CAPTIONS: readonly (readonly string[])[] = [
-  ['one moment later…', 'a second later…', 'shortly afterwards…'],
-  ['a few moments later…', 'some time later…', 'a short while later…'],
-  ['several hours later…', 'later that evening…', 'after a long walk…'],
-  ['three days later…', 'the following week…', 'a season later…'],
-  ['some years later…', 'a decade later…', 'much later…'],
-  ['two centuries later…', 'an age of the world later…', 'long after everyone forgot…'],
-  ['at the heat death of the universe…', 'eventually…', 'still later…'],
+const BUFFER_CARDS: readonly string[] = [
+  'Second',
+  'Long_Wait',
+  'Hour',
+  'Day',
+  'Week',
+  'Fortnight',
+  'Month',
+  'Season',
+  'Year',
+  'Century',
+  'Lifetime',
+  'Eternity',
 ];
 
-/** How long before the first caption, and between each escalation. */
-const CAPTION_DELAY_MS = 1200;
-const CAPTION_STEP_MS = 1800;
+/** Nothing shows for a start this quick; most of them are quicker than this. */
+const BUFFER_DELAY_MS = 900;
+/**
+ * The pause after a line finishes before the next card.
+ *
+ * Deliberately not back to back: the recordings land better with a beat
+ * between them, and a card that changes the instant the last one stops reads
+ * as a glitch rather than a gag.
+ */
+const BUFFER_GAP_MS = 1500;
+/** If a recording never reports finishing, move on anyway. */
+const BUFFER_MAX_CARD_MS = 6000;
 
 /** Injected by the Android shell. Absent in a browser. */
 declare global {
@@ -339,8 +355,12 @@ export class App {
   private npStatus!: HTMLElement;
   private npTiming!: HTMLElement;
   private npLoading!: HTMLElement;
+  private npBuffer!: HTMLImageElement;
   private captionTimer = 0;
-  private captionTier = 0;
+  /** The order of cards for this wait, and how far through it we are. */
+  private bufferOrder: string[] = [];
+  private bufferAt = 0;
+  private bufferVoice: HTMLAudioElement | null = null;
   private npSource!: HTMLElement;
   private npAdd!: HTMLButtonElement;
 
@@ -2118,6 +2138,11 @@ export class App {
     this.npLoading = el('p', 'np-loading', '');
     this.np.appendChild(this.npLoading);
 
+    this.npBuffer = el('img', 'np-buffer') as HTMLImageElement;
+    this.npBuffer.hidden = true;
+    this.npBuffer.alt = '';
+    this.np.appendChild(this.npBuffer);
+
     this.npTiming = el('p', 'np-timing', '');
     this.np.appendChild(this.npTiming);
 
@@ -2450,26 +2475,80 @@ export class App {
     this.paintTiming();
   }
 
-  /** Starts the escalating captions. Stops on its own once sound arrives. */
+  /**
+   * Shows title cards over the player while a track loads.
+   *
+   * One card at a time: the picture goes up where the video will be and its
+   * recording plays. When the recording finishes there is a beat, and if the
+   * track still has not started the next card takes over. Everything stops the
+   * moment there is something to watch.
+   */
   private startLoadingCaptions(): void {
     this.stopLoadingCaptions();
-    this.captionTier = 0;
 
-    const tick = (): void => {
-      const tier = LOADING_CAPTIONS[Math.min(this.captionTier, LOADING_CAPTIONS.length - 1)];
-      if (tier) {
-        const choice = tier[Math.floor(Math.random() * tier.length)] ?? '';
-        this.npLoading.textContent = choice;
-      }
-      this.captionTier++;
-      this.captionTimer = window.setTimeout(tick, CAPTION_STEP_MS);
+    // Shuffled rather than run in order, so a short wait is not always the
+    // same two cards.
+    this.bufferOrder = BUFFER_CARDS.slice();
+    for (let i = this.bufferOrder.length - 1; i > 0; i--) {
+      const j = Math.floor(Math.random() * (i + 1));
+      const a = this.bufferOrder[i]!;
+      this.bufferOrder[i] = this.bufferOrder[j]!;
+      this.bufferOrder[j] = a;
+    }
+    this.bufferAt = 0;
+
+    this.captionTimer = window.setTimeout(() => this.showBufferCard(), BUFFER_DELAY_MS);
+  }
+
+  private showBufferCard(): void {
+    const name = this.bufferOrder[this.bufferAt % this.bufferOrder.length];
+    if (!name) return;
+    this.bufferAt++;
+
+    this.npBuffer.src = 'buffer/images/' + name + '.png';
+    this.npBuffer.hidden = false;
+
+    // A new element per card. Reusing one and swapping src leaves the old
+    // decode attached on this WebView, and a stale 'ended' can then fire
+    // against the wrong card.
+    this.stopBufferVoice();
+    const voice = new Audio('buffer/voices/' + name + '.mp3');
+    this.bufferVoice = voice;
+
+    const next = (): void => {
+      if (this.bufferVoice !== voice) return; // superseded, or already stopped
+      this.captionTimer = window.setTimeout(() => this.showBufferCard(), BUFFER_GAP_MS);
     };
-    this.captionTimer = window.setTimeout(tick, CAPTION_DELAY_MS);
+    voice.addEventListener('ended', next);
+    // A recording that never reports finishing must not strand the card.
+    voice.addEventListener('error', next);
+    window.setTimeout(next, BUFFER_MAX_CARD_MS);
+
+    void voice.play().catch(() => {
+      // Blocked or unplayable: the picture still carries the joke.
+    });
+  }
+
+  private stopBufferVoice(): void {
+    const voice = this.bufferVoice;
+    this.bufferVoice = null;
+    if (!voice) return;
+    try {
+      voice.pause();
+      voice.src = '';
+    } catch {
+      /* nothing worth doing if it will not stop */
+    }
   }
 
   private stopLoadingCaptions(): void {
     window.clearTimeout(this.captionTimer);
     this.captionTimer = 0;
+    this.stopBufferVoice();
+    if (this.npBuffer) {
+      this.npBuffer.hidden = true;
+      this.npBuffer.removeAttribute('src');
+    }
     if (this.npLoading) this.npLoading.textContent = '';
   }
 

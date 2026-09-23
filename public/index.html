@@ -1114,6 +1114,37 @@ body {
   .has-mini .greeting { display: none; }
 }
 
+/* The loading title card.
+   Sits over the player, where the video will appear, so the wait has something
+   in it rather than a dark rectangle. Square source art, centred, and never
+   wider than the stage it is covering. */
+.np-buffer {
+  position: absolute;
+  left: 50%;
+  top: 46%;
+  transform: translate(-50%, -50%);
+  z-index: 8;
+  /* Maximums rather than a fixed width, so the element is the picture. Set as
+     a width with object-fit, the box stayed 240px wide while a square image
+     letterboxed inside it — and the shadow and rounded corners were drawn
+     around the box, not the art. */
+  max-width: min(74vw, 240px);
+  max-height: 46vh;
+  width: auto;
+  height: auto;
+  border-radius: 10px;
+  box-shadow: 0 8px 28px rgba(0, 0, 0, 0.66);
+  pointer-events: none;
+}
+/* In Shorts the stage is the whole screen, so the card can be larger and sits
+   a little higher, clear of the controls floating along the bottom. */
+.np.shorts .np-buffer {
+  top: 42%;
+  max-width: min(80vw, 260px);
+  max-height: 52vh;
+}
+.np.ambient .np-buffer { opacity: 0; }
+
 .np-status { display: none; }
 
 /* A button that fills a row, for playlist rows that also carry a delete. */
