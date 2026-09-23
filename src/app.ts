@@ -1026,17 +1026,32 @@ export class App {
     this.autoFilled.clear();
   }
 
-  private shortCell(ranked: RankedTrack): HTMLElement {
+  /**
+   * A Short as a portrait tile.
+   *
+   * Takes an optional pool for the same reason row() does: tapped from a
+   * channel, what plays next should be the rest of that channel rather than the
+   * mixed feed. Without it, browsing a channel's Shorts and tapping one quietly
+   * dropped you back into the general queue.
+   */
+  private shortCell(ranked: RankedTrack, pool?: RankedTrack[]): HTMLElement {
     const cell = button('short-cell');
     const art = el('div', 'short-art');
     paintArt(art, ytThumb(ranked.track.artworkUrl, 'mq'), ranked.track.title, '▶', true);
     cell.appendChild(art);
     cell.appendChild(el('span', 'short-label', ranked.track.title));
     cell.addEventListener('click', () => {
-      // Back to the mixed feed.
-      this.channelLocked = false;
-      const at = this.queue.indexOf(ranked);
-      if (at >= 0) this.queue.splice(at, 1);
+      // A pool means a closed set, which also means it must not be topped up.
+      this.channelLocked = pool !== undefined;
+      if (pool) {
+        // Everything after the one tapped, in the order the channel lists it.
+        const at = pool.indexOf(ranked);
+        this.queue = at >= 0 ? pool.slice(at + 1) : pool.filter((r) => r !== ranked);
+      } else {
+        // Back to the mixed feed.
+        const at = this.queue.indexOf(ranked);
+        if (at >= 0) this.queue.splice(at, 1);
+      }
       void this.playTrack(ranked);
       this.openNowPlaying();
     });
@@ -1245,6 +1260,17 @@ export class App {
       );
       return;
     }
+
+    // Shorts get the same grid of portrait tiles they get on the Shorts tab.
+    // They were being listed as small landscape rows here, so a channel's
+    // Shorts looked like a different feature from the same Shorts one tab over.
+    if (this.searchScope === 'short') {
+      const grid = el('div', 'short-grid');
+      for (const item of shown) grid.appendChild(this.shortCell(item, pool));
+      results.appendChild(grid);
+      return;
+    }
+
     for (const item of shown) results.appendChild(this.row(item, pool));
   }
 
