@@ -46,8 +46,21 @@ const options = {
   bundle: true,
   format: 'iife',
   target: ['chrome58'],
-  sourcemap: watch ? 'inline' : false,
-  minify: !watch,
+  /*
+   * Linked, never inline, and always minified.
+   *
+   * The dev build used to carry an inline sourcemap and skip minification: 195
+   * KB of code with 530 KB of map glued to it, 725 KB in total against 82 KB
+   * for the shipped bundle. The watch downloaded and parsed all of it on every
+   * load, which is where eleven seconds of a twelve-second startup went, for a
+   * map no device without developer tools will ever read.
+   *
+   * Linked means it sits in a separate file that a browser only fetches when
+   * its devtools are open — so a desktop keeps full debugging and the watch
+   * never sees it.
+   */
+  sourcemap: watch ? 'linked' : false,
+  minify: true,
   legalComments: 'none',
   logLevel: 'info',
   define: {

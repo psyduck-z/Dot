@@ -481,7 +481,14 @@ export class App {
     });
   }
 
+  /** Milliseconds since the page began, for startup reporting. */
+  private sinceBoot(): number {
+    const boot = (window as unknown as { __dotBoot?: number }).__dotBoot;
+    return boot ? Date.now() - boot : -1;
+  }
+
   async start(): Promise<void> {
+    console.info('dot: start() at +' + this.sinceBoot() + 'ms');
     // Anything that was loading when the app last died is put away before the
     // feed is built, so it cannot be offered again. One Short killed the
     // renderer four times in a row simply by being first in the list.
@@ -505,6 +512,7 @@ export class App {
       return;
     }
     this.renderShell();
+    console.info('dot: shell rendered at +' + this.sinceBoot() + 'ms');
 
     if (returnTo === 'development') {
       this.show('settings');
@@ -517,10 +525,14 @@ export class App {
     // Kick the player off immediately, in parallel with fetching the feed, so
     // the two slow things overlap instead of queueing behind each other.
     this.ytEngine.prewarm();
+    console.info('dot: prewarm issued at +' + this.sinceBoot() + 'ms');
     this.renderHome();
     this.renderLibrary();
+    console.info('dot: first paint at +' + this.sinceBoot() + 'ms');
     await this.refillQueue();
+    console.info('dot: feed ready at +' + this.sinceBoot() + 'ms');
     this.renderHome();
+    console.info('dot: done at +' + this.sinceBoot() + 'ms');
   }
 
   /* ---------------------------------------------------------------- onboarding */

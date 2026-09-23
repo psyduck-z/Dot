@@ -446,3 +446,6 @@ dist/
 
 # Locally downloaded build artifacts, not source.
 dist-apk/
+
+# Linked sourcemap for the dev build; never committed.
+public/bundle.js.map
