@@ -1274,6 +1274,9 @@ button:focus-visible, input:focus-visible {
    * to clear site data.
    */
   (function () {
+    // When the page began, so the app can report how long each part of getting
+    // going actually took. Set before anything else runs.
+    window.__dotBoot = Date.now();
     var BUNDLE = 'dot.ota.bundle.v1';
     var VERSION = 'dot.ota.version.v1';
     var SENTINEL = 'dot.ota.booting.v1';
