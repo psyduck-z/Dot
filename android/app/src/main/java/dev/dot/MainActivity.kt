@@ -19,6 +19,7 @@ import androidx.webkit.WebViewCompat
 import android.content.Context
 import java.net.HttpURLConnection
 import java.net.URL
+import android.webkit.RenderProcessGoneDetail
 
 /**
  * The whole app is a WebView. The UI, the recommender and the storage all live
@@ -45,6 +46,7 @@ class MainActivity : Activity() {
         const val KEY_DEV_FAIL = "devFail"
         const val KEY_RETURN_TO = "returnTo"
         const val KEY_DEV_MISSES = "devMisses"
+        const val KEY_RENDERER_GONE = "rendererGone"
         /** Consecutive failed loads before the address is given up on. */
         const val DEV_MISS_LIMIT = 3
     }
@@ -55,15 +57,38 @@ class MainActivity : Activity() {
     private lateinit var chromeClient: WebChromeClient
     @Volatile private var keepAwake = false
 
+    /** Where the app should start: a development server if one is set. */
+    private fun startUrl(): String {
+        val dev = prefs().getString(KEY_DEV_URL, null)
+        return if (dev.isNullOrBlank()) PACKAGED else dev
+    }
+
     @SuppressLint("SetJavaScriptEnabled")
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
+        webView = buildWebView()
+        setContentView(webView)
+
+        // A dev server address, when one has been set, so changes can be tried
+        // on the watch without building and installing anything. Plain HTTP and
+        // a single origin, which is what lets the page talk to that machine at
+        // all: served from appassets it is an HTTPS page, and a request from
+        // there to a http:// address on the LAN is mixed content and blocked.
+        webView.loadUrl(startUrl())
+    }
+
+    /**
+     * Builds the WebView. Called again from scratch when the renderer dies,
+     * which is why it is a function rather than a block inside onCreate.
+     */
+    @SuppressLint("SetJavaScriptEnabled")
+    private fun buildWebView(): WebView {
         val assetLoader = WebViewAssetLoader.Builder()
             .addPathHandler("/assets/", WebViewAssetLoader.AssetsPathHandler(this))
             .build()
 
-        webView = WebView(this).apply {
+        return WebView(this).apply {
             setBackgroundColor(android.graphics.Color.BLACK)
 
             settings.javaScriptEnabled = true
@@ -129,6 +154,49 @@ class MainActivity : Activity() {
                 }
 
                 /**
+                 * The renderer died. Rebuild rather than go down with it.
+                 *
+                 * This is what a crash on this device actually is: the system
+                 * kills the process rendering the page, usually for memory.
+                 * Left unhandled, the WebView stays dead and Android kills the
+                 * app along with it — the screen simply stops, which is exactly
+                 * what "it crashed" has meant all along, and nothing recovers
+                 * because nothing is left running to recover it.
+                 *
+                 * Returning true claims responsibility, which obliges us to
+                 * discard the dead view and build another. The replacement
+                 * starts at the same address, so a crash costs a reload rather
+                 * than the session.
+                 */
+                @android.annotation.TargetApi(Build.VERSION_CODES.O)
+                override fun onRenderProcessGone(
+                    view: WebView,
+                    detail: RenderProcessGoneDetail
+                ): Boolean {
+                    val crashed = Build.VERSION.SDK_INT >= Build.VERSION_CODES.O && detail.didCrash()
+                    prefs().edit()
+                        .putString(
+                            KEY_RENDERER_GONE,
+                            (if (crashed) "renderer crashed" else "renderer killed to reclaim memory") +
+                                " at " + System.currentTimeMillis()
+                        )
+                        .apply()
+
+                    val last = view.url
+                    // The dead view has to leave the hierarchy before it is
+                    // destroyed, and be destroyed before another is attached.
+                    (view.parent as? ViewGroup)?.removeView(view)
+                    view.destroy()
+
+                    webView = buildWebView()
+                    setContentView(webView)
+                    webView.loadUrl(
+                        if (last.isNullOrBlank() || last == "about:blank") startUrl() else last
+                    )
+                    return true
+                }
+
+                /**
                  * A load that worked clears the record of ones that did not, so
                  * three failures have to be consecutive to count.
                  */
@@ -167,18 +235,8 @@ class MainActivity : Activity() {
                 }
             }
             webChromeClient = chromeClient
+            addJavascriptInterface(DotBridge(), "DotNative")
         }
-
-        webView.addJavascriptInterface(DotBridge(), "DotNative")
-        setContentView(webView)
-
-        // A dev server address, when one has been set, so changes can be tried
-        // on the watch without building and installing anything. Plain HTTP and
-        // a single origin, which is what lets the page talk to that machine at
-        // all: served from appassets it is an HTTPS page, and a request from
-        // there to a http:// address on the LAN is mixed content and blocked.
-        val dev = prefs().getString(KEY_DEV_URL, null)
-        webView.loadUrl(if (dev.isNullOrBlank()) PACKAGED else dev)
     }
 
     private fun prefs() = getSharedPreferences("dot", Context.MODE_PRIVATE)
@@ -325,6 +383,15 @@ class MainActivity : Activity() {
             val tag = prefs().getString(KEY_RETURN_TO, "") ?: ""
             if (tag.isNotEmpty()) prefs().edit().remove(KEY_RETURN_TO).apply()
             return tag
+        }
+
+        /** Whether the renderer has died, and how, since this was last cleared. */
+        @JavascriptInterface
+        fun lastRendererCrash(): String = prefs().getString(KEY_RENDERER_GONE, "") ?: ""
+
+        @JavascriptInterface
+        fun clearRendererCrash() {
+            prefs().edit().remove(KEY_RENDERER_GONE).apply()
         }
 
         /** Why the last attempt to load from a dev server gave up, if it did. */

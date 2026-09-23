@@ -29,6 +29,21 @@ const IFRAME_API = 'https://www.youtube.com/iframe_api';
  * once the screen has gone ambient — which is the state music spends most of
  * its time in.
  */
+/**
+ * What resolution to ask the player for, by what the track is for.
+ *
+ * The screen is 320 pixels wide. Music is listened to rather than watched, and
+ * on this device usually with the display dimmed, so decoding anything beyond
+ * the smallest stream is spent entirely on heat: it costs memory on a device
+ * that gets killed for using it, and decode time on a processor already thirty
+ * times too slow. Shorts are actually looked at, so they keep the larger one.
+ *
+ * A request, not an instruction — the player may serve something else.
+ */
+function qualityFor(kind: string | undefined): string {
+  return kind === 'short' ? 'small' : 'tiny';
+}
+
 const POLL_VISIBLE_MS = 500;
 const POLL_MINIMAL_MS = 2000;
 
@@ -196,7 +211,7 @@ export class YouTubeEngine implements PlaybackEngine {
    * It is a hint, not a promise. If the guess was wrong, load() finds the player
    * holding a different video and proceeds exactly as it did before.
    */
-  async cue(handle: string): Promise<void> {
+  async cue(handle: string, kind?: string): Promise<void> {
     const player = await this.ensurePlayer();
     if (this.track) {
       console.info('dot: cue skipped, already holding ' + this.track.id);
@@ -219,9 +234,9 @@ export class YouTubeEngine implements PlaybackEngine {
     } catch {
       /* older players; the pause below still stops it being heard for long */
     }
-    player.loadVideoById({ videoId: handle, suggestedQuality: 'small' });
+    player.loadVideoById({ videoId: handle, suggestedQuality: qualityFor(kind) });
     this.cuedHandle = handle;
-    console.info('dot: preloading ' + handle);
+    console.info('dot: preloading ' + handle + ' at ' + qualityFor(kind));
   }
 
   prewarm(): void {
@@ -443,14 +458,13 @@ export class YouTubeEngine implements PlaybackEngine {
     // Whatever was being preloaded is not what was asked for.
     this.preloading = false;
 
-    // A watch screen is a couple of hundred pixels wide and most of this is
-    // listened to rather than watched, so the largest stream the player would
-    // otherwise pick is wasted — and the initial buffer it has to fill before
-    // any sound is proportional to it. Asking for the smallest is a request
-    // rather than a guarantee; the player may still choose otherwise.
-    player.loadVideoById({ videoId: handle, suggestedQuality: 'small' });
+    // The initial buffer the player has to fill before any sound is
+    // proportional to the stream it picks, so asking small is asking for a
+    // shorter wait as well as less memory.
+    const quality = qualityFor(track.kind);
+    player.loadVideoById({ videoId: handle, suggestedQuality: quality });
     try {
-      player.setPlaybackQuality('small');
+      player.setPlaybackQuality(quality);
     } catch {
       /* older players ignore this */
     }

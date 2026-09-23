@@ -62,6 +62,18 @@ export function recentCrashes(): CrashRecord[] {
   return read<CrashRecord[]>(KEY_LOG, []);
 }
 
+/**
+ * Whether something went wrong recently enough to still be a concern.
+ *
+ * Used to stand down the optional, memory-hungry work. A device that has just
+ * been killed for using too much memory is the last one that should be told to
+ * start buffering a video nobody has asked for yet.
+ */
+export function crashedRecently(withinMs = 10 * 60 * 1000): boolean {
+  const now = Date.now();
+  return recentCrashes().some((c) => now - c.at < withinMs);
+}
+
 export function clearCrashes(): void {
   try {
     window.localStorage.removeItem(KEY_LOG);

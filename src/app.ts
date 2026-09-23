@@ -17,7 +17,7 @@ import { TasteModel, labelFor } from './reco/model.ts';
 import { buildQueue, exploreRate, type RankedTrack } from './reco/queue.ts';
 import { contextBucket, featurize, hashKey, normalizeTag } from './reco/features.ts';
 import * as store from './store.ts';
-import { crashContext, recentCrashes, clearCrashes } from './crash.ts';
+import { crashContext, recentCrashes, clearCrashes, crashedRecently } from './crash.ts';
 import { mirrorStatus } from './remote.ts';
 import {
   checkForUpdate,
@@ -203,6 +203,15 @@ function portOf(url: string): string {
   return match[1] === DEV_HOST ? (match[2] ?? '') : url;
 }
 
+/**
+ * How long to leave the device alone before preloading anything.
+ *
+ * Long enough for the feed to have rendered and its images to have settled.
+ * The preload is worth several seconds off the first play, but only if the
+ * device survives to collect them.
+ */
+const CUE_DELAY_MS = 4000;
+
 /** Must match the rail width in the stylesheet. */
 const RAIL_WIDTH = 62;
 /** The only sections long enough to be worth hiding. */
@@ -360,6 +369,8 @@ export class App {
   private startedAt = 0;
   /** Repaints the mirror status line while Settings is open. */
   private devTimer = 0;
+  /** Defers the preload until the app has stopped being busy. */
+  private cueTimer = 0;
   private handedOffAt = 0;
   private lastTiming = '';
   private timingLine?: HTMLElement;
@@ -684,8 +695,10 @@ export class App {
         this.renderHome();
         if (kind === 'short') void this.ensureShorts();
         // The other surface's first track is now the one most likely to be
-        // tapped, so it is the one worth having ready.
-        this.cueAhead();
+        // tapped, so it is the one worth having ready — once the switch itself
+        // has finished rendering.
+        window.clearTimeout(this.cueTimer);
+        this.cueTimer = window.setTimeout(() => this.cueAhead(), CUE_DELAY_MS);
       });
       this.surfaceTabs.set(kind, tab);
       seg.appendChild(tab);
@@ -2597,7 +2610,12 @@ export class App {
             : 'Add a YouTube key in Settings to start.',
         );
       }
-      this.cueAhead();
+      // Not immediately. This fires at the end of the first refill, which is
+      // while the app is still building the feed, decoding its artwork and
+      // settling — the busiest moment there is. Starting a video download in
+      // the middle of that is what took the whole renderer down with it.
+      window.clearTimeout(this.cueTimer);
+      this.cueTimer = window.setTimeout(() => this.cueAhead(), CUE_DELAY_MS);
     } finally {
       this.refilling = false;
     }
@@ -2617,6 +2635,15 @@ export class App {
       console.info('dot: cueAhead skipped, a track is loaded');
       return;
     }
+
+    // Preloading is an optimisation, and an optimisation that crashes the app
+    // is worth less than the seconds it saves. A device that has recently been
+    // killed stops being asked to buffer a video nobody has chosen yet; it
+    // starts again once it has been stable for a while.
+    if (crashedRecently()) {
+      console.info('dot: cueAhead standing down, something crashed recently');
+      return;
+    }
     // The head of what is on screen, not the head of the queue. The queue
     // holds both surfaces mixed together and everything hidden, so its first
     // entry is routinely a Short while the Music feed is showing — which meant
@@ -2632,7 +2659,7 @@ export class App {
     // is cued with is exactly the one it would otherwise be loaded with.
     void this.youtube
       .resolveStreamUrl(head.track.id)
-      .then((handle) => (handle ? this.ytEngine.cue(handle) : undefined))
+      .then((handle) => (handle ? this.ytEngine.cue(handle, head.track.kind) : undefined))
       .catch(() => {
         // A failed guess costs nothing; the real play will load it properly.
       });
