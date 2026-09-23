@@ -94,11 +94,24 @@ let apiPromise: Promise<YtNamespace> | null = null;
  * hints in the page only cover the first load; re-inserting them puts the
  * browser back to work on the same hosts while the player is still starting.
  */
+/**
+ * Opens connections to the hosts the player is about to use, once.
+ *
+ * It used to remove each link and add it again on every load and every
+ * preload. Removing a preconnect tells the browser it no longer needs that
+ * connection and it is free to close the socket; adding it back then starts a
+ * fresh DNS lookup, TCP handshake and TLS negotiation — which is the exact work
+ * preconnecting exists to avoid, performed immediately before the load that
+ * needed it warm. A link that is already there is already doing its job.
+ *
+ * googlevideo.com is kept for the DNS, though the media itself comes from
+ * per-session subdomains that cannot be known in advance.
+ */
+const WARM_HOSTS = ['https://www.youtube.com', 'https://i.ytimg.com', 'https://googlevideo.com'];
+
 function warmConnections(): void {
-  const hosts = ['https://www.youtube.com', 'https://i.ytimg.com', 'https://googlevideo.com'];
-  for (const host of hosts) {
-    const existing = document.head.querySelector('link[data-dot-warm="' + host + '"]');
-    if (existing) existing.parentNode?.removeChild(existing);
+  for (const host of WARM_HOSTS) {
+    if (document.head.querySelector('link[data-dot-warm="' + host + '"]')) continue;
 
     const link = document.createElement('link');
     link.rel = 'preconnect';
@@ -232,20 +245,6 @@ export class YouTubeEngine implements PlaybackEngine {
     // loadVideoById does fetch it. It also starts playing, which is why the
     // volume goes to zero first and the state handler pauses it the instant the
     // media is running.
-    // Whatever is already loaded goes first. Switching surfaces preloads a
-    // second video within seconds of the first, and tapping one then makes a
-    // third — three streams' worth of decode buffers inside half a minute, on a
-    // device that gets killed for exactly that. stopVideo releases the current
-    // one rather than leaving it to be displaced.
-    if (this.cuedHandle && this.cuedHandle !== handle) {
-      try {
-        player.stopVideo();
-        console.info('dot: released ' + this.cuedHandle + ' before preloading again');
-      } catch {
-        /* nothing loaded to release */
-      }
-    }
-
     this.preloading = true;
     try {
       player.setVolume(0);
@@ -446,6 +445,13 @@ export class YouTubeEngine implements PlaybackEngine {
     this.endedFor = null;
     this.knownDuration = 0;
     this.host.hidden = false;
+
+    // Nothing to report until there is something playing, and each tick is two
+    // calls across the frame boundary. At 500ms that is roughly thirty round
+    // trips during a seven-second load, spent updating a scrubber that has no
+    // position yet — on the processor the load is already waiting for. Polling
+    // starts again by itself when the player reaches PLAYING.
+    this.stopPolling();
     const player = await this.ensurePlayer();
     warmConnections();
 
@@ -473,20 +479,14 @@ export class YouTubeEngine implements PlaybackEngine {
       return;
     }
 
-    // Whatever was being preloaded is not what was asked for, and it is still
-    // sitting in the player with its buffers. Loading over the top of it
-    // reproduced a renderer kill every time: always the first Short tapped
-    // while a preloaded music track was held, and never once the preload had
-    // stood down. Released first, so only one stream is ever resident.
+    // Deliberately no stopVideo here. It was added believing a held stream was
+    // behind the Shorts crash; it was not — the crash was a resize, and this
+    // survived the revert of everything else from that theory. Tearing the
+    // player down and building it up again is work on the path between pressing
+    // next and hearing anything, and loadVideoById replaces the video on its
+    // own. The check that guarded it was dead in any case: cuedHandle is
+    // cleared three lines above it.
     this.preloading = false;
-    if (this.cuedHandle !== null || holding !== '(none)') {
-      try {
-        player.stopVideo();
-        console.info('dot: released ' + holding + ' before loading ' + handle);
-      } catch {
-        /* nothing loaded to release */
-      }
-    }
 
     // The initial buffer the player has to fill before any sound is
     // proportional to the stream it picks, so asking small is asking for a
