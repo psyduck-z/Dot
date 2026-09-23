@@ -1,7 +1,7 @@
 {
-  "version": "0753de2",
+  "version": "a518968",
   "bundle": "bundle.js",
-  "notes": "Drop the second button that did what the first one did",
+  "notes": "Take three things off the path between pressing next and hearing anything",
   "apk": "dot.apk",
-  "apkVersion": 86
+  "apkVersion": 87
 }
