@@ -170,6 +170,18 @@ export class Player {
     this.engine.pause();
   }
 
+  /**
+   * Starts playing again, whatever state it is in.
+   *
+   * Distinct from toggle(), which would stop a track that is already running.
+   * Skipping pauses before it looks for something to skip to, so when there is
+   * nothing the listener is left in silence — this is how the current track
+   * gets put back.
+   */
+  resume(): void {
+    if (this.engine.isPaused()) void this.engine.play().catch(() => undefined);
+  }
+
   seek(seconds: number): void {
     this.engine.seek(seconds);
   }

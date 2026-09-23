@@ -2883,6 +2883,10 @@ export class App {
   }
 
   async next(reason: 'skipped' | 'completed'): Promise<void> {
+    console.info(
+      'dot: next(' + reason + ') queue=' + this.queue.length +
+        ' current=' + (this.player.track?.id ?? 'none'),
+    );
     if (reason === 'skipped') this.player.skip();
 
     if (!this.channelLocked && this.queue.length <= QUEUE_LOW_WATER) {
@@ -2906,7 +2910,12 @@ export class App {
     if (nextUp) this.queue.splice(this.queue.indexOf(nextUp), 1);
 
     if (current === 'short' && !this.channelLocked) void this.ensureShorts();
-    this.renderHome();
+
+    // After the next track is on its way, not before it. With Now Playing open
+    // this returns immediately, but from the mini player it rebuilds the whole
+    // feed — twenty-five rows and their artwork — and every millisecond of that
+    // sat between pressing next and the player being asked for anything.
+    window.setTimeout(() => this.renderHome(), 0);
 
     if (!nextUp) {
       if (this.channelLocked) {
@@ -2915,8 +2924,23 @@ export class App {
       }
       await this.refillQueue();
       this.renderHome();
-      const retry = this.queue.shift();
-      if (retry) await this.playTrack(retry);
+
+      // Within the surface, as above. Taking the head of the whole queue here
+      // is the same fault that used to hand over a Short in the middle of
+      // listening to music, left behind in the path nobody reaches often.
+      const retry = this.queueFor(current)[0];
+      if (retry) {
+        this.queue.splice(this.queue.indexOf(retry), 1);
+        await this.playTrack(retry);
+        return;
+      }
+
+      // Skipping pauses first and then looks for somewhere to go. With nothing
+      // to go to, this returned and left the track paused, silent, with nothing
+      // said — which is what pressing next looked like when the feed had run
+      // dry: the button appeared to stop the music and do nothing else.
+      this.setStatus('Nothing else queued — still playing this one');
+      this.player.resume();
       return;
     }
     await this.playTrack(nextUp);
