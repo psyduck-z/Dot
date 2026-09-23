@@ -1,7 +1,7 @@
 {
-  "version": "a518968",
+  "version": "0751aaf",
   "bundle": "bundle.js",
-  "notes": "Take three things off the path between pressing next and hearing anything",
+  "notes": "Tell the player what to load before repainting the screen",
   "apk": "dot.apk",
-  "apkVersion": 87
+  "apkVersion": 88
 }
