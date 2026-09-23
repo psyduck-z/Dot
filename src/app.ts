@@ -17,6 +17,7 @@ import { TasteModel, labelFor } from './reco/model.ts';
 import { buildQueue, exploreRate, type RankedTrack } from './reco/queue.ts';
 import { contextBucket, featurize, hashKey, normalizeTag } from './reco/features.ts';
 import * as store from './store.ts';
+import { crashContext, recentCrashes, clearCrashes } from './crash.ts';
 import { mirrorStatus } from './remote.ts';
 import {
   checkForUpdate,
@@ -1301,6 +1302,34 @@ export class App {
    * Only appears inside the Android shell, and only when that shell is new
    * enough to honour it.
    */
+  /**
+   * What went wrong last time, if anything did.
+   *
+   * On the installed copy this is the only record there is: the mirror cannot
+   * reach it, and a renderer killed for running out of memory takes its console
+   * with it. Shown rather than merely stored, because the person holding the
+   * watch is the only one who can see it.
+   */
+  private buildCrashLog(host: HTMLElement): void {
+    const crashes = recentCrashes();
+    if (crashes.length === 0) return;
+
+    host.appendChild(el('h2', 'shelf-title', 'Problems'));
+    for (const crash of crashes.slice(-4).reverse()) {
+      const when = new Date(crash.at);
+      const stamp =
+        String(when.getHours()).padStart(2, '0') + ':' + String(when.getMinutes()).padStart(2, '0');
+      host.appendChild(el('p', 'muted', stamp + ' — ' + crash.doing + ' — ' + crash.how));
+    }
+
+    const clear = button('toggle', 'Clear these');
+    clear.addEventListener('click', () => {
+      clearCrashes();
+      this.show('settings');
+    });
+    host.appendChild(clear);
+  }
+
   private buildDevServer(host: HTMLElement): void {
     const native = window.DotNative;
     const mirror = mirrorStatus();
@@ -1709,6 +1738,7 @@ export class App {
     this.statsBox = el('div', 'stats');
     host.appendChild(this.statsBox);
 
+    this.buildCrashLog(host);
     this.buildDevServer(host);
 
     const reset = button('danger', 'Forget everything');
@@ -2288,6 +2318,7 @@ export class App {
    */
   /** Records how long the two halves of this track start took. */
   private markStarted(): void {
+    crashContext('playing');
     if (this.startedAt <= 0) return;
     this.stopLoadingCaptions();
     const now = Date.now();
@@ -2660,6 +2691,8 @@ export class App {
 
     this.startedAt = Date.now();
     this.handedOffAt = 0;
+    // The likeliest last thing this app ever does, so it is worth naming.
+    crashContext('loading ' + ranked.track.kind + ' ' + ranked.track.id);
     this.startLoadingCaptions();
 
     // Start the player first. None of the bookkeeping below affects what is

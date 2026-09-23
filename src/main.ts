@@ -4,17 +4,21 @@ import './compat.ts';
 import { App } from './app.ts';
 import { markBootSuccessful } from './updater.ts';
 import { startMirror } from './remote.ts';
+import { startCrashWatch } from './crash.ts';
 
-// Before the app, and outside everything that could go wrong in it.
+// Both before the app, and outside everything that could go wrong in it.
 //
-// This used to run after start() resolved, which had it backwards: the mirror
-// is how a device with no USB, no browser and no developer options says what it
-// is doing, and the moment that matters most is when the app has failed to
-// start. Anything that threw or never settled took the only means of finding
-// out why down with it, leaving a blank screen and nothing on the wire.
+// The crash watch has to be first: it exists to notice that the previous
+// session never finished, and anything that throws before it runs is the exact
+// case it is there to catch.
 //
-// A no-op unless Dot was served over plain HTTP, which on the watch means the
-// dev server and nothing else.
+// The mirror used to run after start() resolved, which had it backwards. It is
+// how a device with no USB, no browser and no developer options says what it is
+// doing, and the moment that matters most is when the app has failed to start;
+// anything that threw or never settled took the only means of finding out why
+// down with it. It is a no-op unless Dot was served over plain HTTP, which on
+// the watch means the dev server and nothing else.
+startCrashWatch();
 startMirror();
 
 const root = document.getElementById('app');
