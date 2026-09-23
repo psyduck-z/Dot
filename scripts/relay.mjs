@@ -18,8 +18,38 @@
  *   GET  /           plain-text status
  */
 import { createServer } from 'node:http';
+import { statSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
+import path from 'node:path';
 
 const PORT = Number(process.env.RELAY_PORT ?? 5175);
+
+const BUNDLE = path.resolve(
+  path.dirname(fileURLToPath(import.meta.url)),
+  '..',
+  'public',
+  'bundle.js',
+);
+
+/**
+ * When the bundle was last written.
+ *
+ * Reported to the device so it can notice a rebuild and reload itself. A
+ * modification time rather than a build id because esbuild fixes `define`
+ * values when the watch context is created, so a stamp compiled into the
+ * bundle would be identical across every rebuild of a session — which is
+ * precisely the case this needs to detect.
+ *
+ * The device compares it against the first value it saw rather than against a
+ * clock, so the two machines' clocks never have to agree.
+ */
+function bundleStamp() {
+  try {
+    return statSync(BUNDLE).mtimeMs;
+  } catch {
+    return 0;
+  }
+}
 
 let snapshot = null;
 let received = 0;
@@ -82,7 +112,7 @@ const server = createServer(async (req, res) => {
     // Handing the queue back in the reply is what keeps this to one request.
     const pending = commands;
     commands = [];
-    return json(res, 200, { commands: pending });
+    return json(res, 200, { commands: pending, bundle: bundleStamp() });
   }
 
   if (req.method === 'GET' && url === '/snapshot') {

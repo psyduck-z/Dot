@@ -21,6 +21,13 @@
 
 const TICK_MS = 800;
 const RELAY_PORT = 5175;
+/**
+ * Floor between self-reloads.
+ *
+ * A save that triggers several rebuilds in quick succession would otherwise
+ * reload the device repeatedly, and a reload on this hardware is not cheap.
+ */
+const RELOAD_GUARD_MS = 5000;
 
 /**
  * Last known state of the link, for Settings to show.
@@ -37,6 +44,43 @@ export interface MirrorStatus {
 }
 
 const status: MirrorStatus = { active: false, relay: '', lastOkAt: 0, lastError: '', sent: 0 };
+
+/**
+ * The bundle this page was loaded with, as the relay reported it on the first
+ * tick, and the guard against reloading in a loop.
+ *
+ * Compared against itself rather than against a clock: the watch and the
+ * machine serving it have no reason to agree on the time, and a comparison
+ * against Date.now() here would either reload constantly or never.
+ */
+let knownBundle = 0;
+
+/**
+ * When this page last reloaded itself, kept where a reload cannot reach it.
+ *
+ * It lived in a module variable first, which cannot work: reloading is exactly
+ * the thing that resets module state, so every reload cleared the evidence that
+ * it had happened and three rebuilds in a row produced three reloads. Session
+ * storage survives the reload and is discarded when the app closes, which is
+ * the lifetime this actually wants.
+ */
+const RELOAD_KEY = 'dot.mirror.reloadedAt';
+
+function lastReloadAt(): number {
+  try {
+    return Number(window.sessionStorage.getItem(RELOAD_KEY) ?? '0') || 0;
+  } catch {
+    return 0;
+  }
+}
+
+function markReloaded(): void {
+  try {
+    window.sessionStorage.setItem(RELOAD_KEY, String(Date.now()));
+  } catch {
+    /* no session storage: the guard lapses, which only costs extra reloads */
+  }
+}
 
 export function mirrorStatus(): MirrorStatus {
   return status;
@@ -86,8 +130,17 @@ export function startMirror(): void {
   let previous = '';
   let busy = false;
 
-  const apply = (command: { click?: string; text?: string; scroll?: { sel?: string; top?: number } }): void => {
+  const apply = (command: {
+    click?: string;
+    text?: string;
+    reload?: boolean;
+    scroll?: { sel?: string; top?: number };
+  }): void => {
     try {
+      if (command.reload) {
+        location.reload();
+        return;
+      }
       if (command.click) {
         const target = document.querySelector(command.click);
         if (target instanceof HTMLElement) target.click();
@@ -145,8 +198,31 @@ export function startMirror(): void {
       status.lastOkAt = Date.now();
       status.lastError = '';
       status.sent++;
-      const reply = (await res.json()) as { commands?: unknown[] };
-      for (const command of reply.commands ?? []) apply(command as { click?: string; text?: string });
+      const reply = (await res.json()) as { commands?: unknown[]; bundle?: number };
+
+      // A rebuild on the other end means this page is running code that has
+      // been superseded. Reloading here rather than waiting to be told is what
+      // makes a change on the development machine show up on the device without
+      // anyone touching it — which on a watch with no keyboard is the whole
+      // difference between a usable loop and a miserable one.
+      const stamp = reply.bundle ?? 0;
+      if (stamp > 0) {
+        if (knownBundle === 0) {
+          knownBundle = stamp;
+        } else if (stamp !== knownBundle && Date.now() - lastReloadAt() > RELOAD_GUARD_MS) {
+          // knownBundle is deliberately left alone: if the guard blocks this,
+          // the difference is still there next tick and the reload happens as
+          // soon as the window passes, rather than being forgotten.
+          markReloaded();
+          console.info('mirror: bundle changed, reloading');
+          location.reload();
+          return;
+        }
+      }
+
+      for (const command of reply.commands ?? []) {
+        apply(command as { click?: string; text?: string; reload?: boolean });
+      }
       // A command changes the screen, so the next tick must send it.
       if ((reply.commands ?? []).length > 0) previous = '';
     } catch (e) {
@@ -158,6 +234,9 @@ export function startMirror(): void {
     }
   };
 
+  // Immediately, not after the first interval: the sooner the bundle stamp is
+  // known, the smaller the window in which a rebuild can land unnoticed.
+  void tick();
   window.setInterval(() => void tick(), TICK_MS);
   console.info('mirror: reporting to ' + relay);
 }

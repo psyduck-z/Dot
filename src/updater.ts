@@ -196,7 +196,14 @@ export async function checkForUpdate(): Promise<UpdateStatus> {
 
   let code: string;
   try {
-    const res = await fetch(resolve(url, manifest.bundle), { cache: 'no-store' });
+    // Stamped with the version being fetched, not just marked no-store. The
+    // manifest is cache-busted and so always names the newest build, but the
+    // bundle sat at a fixed URL behind a CDN — so a check could report the
+    // latest version, download whatever that path happened to be holding, and
+    // leave the app one build behind while insisting it was current.
+    const bundleUrl = resolve(url, manifest.bundle);
+    const stamped = bundleUrl + (bundleUrl.indexOf('?') >= 0 ? '&' : '?') + 'v=' + encodeURIComponent(manifest.version);
+    const res = await fetch(stamped, { cache: 'no-store' });
     if (!res.ok) return { current, message: 'Could not download the update.' };
     code = await res.text();
   } catch {

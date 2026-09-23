@@ -44,6 +44,9 @@ class MainActivity : Activity() {
         const val KEY_DEV_URL = "devUrl"
         const val KEY_DEV_FAIL = "devFail"
         const val KEY_RETURN_TO = "returnTo"
+        const val KEY_DEV_MISSES = "devMisses"
+        /** Consecutive failed loads before the address is given up on. */
+        const val DEV_MISS_LIMIT = 3
     }
 
     private lateinit var webView: WebView
@@ -87,10 +90,18 @@ class MainActivity : Activity() {
                  * A dev server that is not there must not leave a blank screen.
                  *
                  * This device has no browser, no USB and no way to clear app
-                 * data, so a build pointed at a laptop that has since been shut
-                 * down would be unrecoverable. Any failure loading the main
-                 * frame falls back to the packaged app and forgets the address,
-                 * which turns bricking it into an inconvenience.
+                 * data, so a build pointed at a machine that has since been shut
+                 * down would be unrecoverable. Every failure to load the main
+                 * frame falls back to the packaged app, which turns bricking it
+                 * into an inconvenience.
+                 *
+                 * The address survives the first few failures rather than being
+                 * dropped on the first. Restarting the development server, or a
+                 * moment of bad wifi, would otherwise unpair the watch
+                 * permanently and silently — and reconnecting after exactly
+                 * those interruptions is the point of the thing. Three
+                 * consecutive misses means the machine is genuinely gone, and
+                 * then the address goes.
                  */
                 override fun onReceivedError(
                     view: WebView,
@@ -99,16 +110,32 @@ class MainActivity : Activity() {
                 ) {
                     if (!request.isForMainFrame) return
                     if (view.url?.startsWith("https://appassets.") == true) return
+
+                    val misses = prefs().getInt(KEY_DEV_MISSES, 0) + 1
                     // Recorded so the app can say what happened. Falling back
                     // silently is why a watch that could not reach the laptop
                     // looked exactly like a watch that had never been told to
                     // try, which is a bad half-hour for whoever is guessing.
-                    val why = request.url.toString() + " — " + error.description
-                    prefs().edit()
-                        .remove(KEY_DEV_URL)
-                        .putString(KEY_DEV_FAIL, why)
-                        .apply()
+                    val why = request.url.toString() + " — " + error.description +
+                        " (attempt " + misses + " of " + DEV_MISS_LIMIT + ")"
+                    val editor = prefs().edit().putString(KEY_DEV_FAIL, why)
+                    if (misses >= DEV_MISS_LIMIT) {
+                        editor.remove(KEY_DEV_URL).remove(KEY_DEV_MISSES)
+                    } else {
+                        editor.putInt(KEY_DEV_MISSES, misses)
+                    }
+                    editor.apply()
                     view.loadUrl(PACKAGED)
+                }
+
+                /**
+                 * A load that worked clears the record of ones that did not, so
+                 * three failures have to be consecutive to count.
+                 */
+                override fun onPageFinished(view: WebView, url: String) {
+                    if (url.startsWith("http://")) {
+                        prefs().edit().remove(KEY_DEV_MISSES).apply()
+                    }
                 }
             }
 

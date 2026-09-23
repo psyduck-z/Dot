@@ -1177,6 +1177,14 @@ button:focus-visible, input:focus-visible {
       version = localStorage.getItem(VERSION);
       code = localStorage.getItem(BUNDLE);
 
+      // Served over plain http means a development server, and a development
+      // server should serve what it serves. A bundle downloaded earlier would
+      // otherwise win here too, so every change made on the machine the device
+      // is pointed at would appear to do nothing at all.
+      if (code && location.protocol === 'http:') {
+        code = null;
+      }
+
       // A newer shell has been installed since this bundle was downloaded, so
       // the copy packaged inside it is the newer of the two. Without this the
       // downloaded one wins forever, and installing an APK updates the native
