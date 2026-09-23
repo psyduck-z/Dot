@@ -1,7 +1,7 @@
 {
-  "version": "254688b",
+  "version": "2081b16",
   "bundle": "bundle.js",
-  "notes": "Try the in-app installer again, on a build that no longer looks like one",
+  "notes": "Stop trying to crash the renderer on purpose; it cannot be done from here",
   "apk": "dot.apk",
-  "apkVersion": 78
+  "apkVersion": 79
 }
