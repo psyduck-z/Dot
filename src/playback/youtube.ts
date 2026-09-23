@@ -138,6 +138,8 @@ export class YouTubeEngine implements PlaybackEngine {
   private knownDuration = 0;
   /** The video cue() last handed the player, if it has not been consumed. */
   private cuedHandle: string | null = null;
+  /** True between starting a preload and pausing it once it is buffering. */
+  private preloading = false;
   /** Whether the track now loaded was already cued when it was asked for. */
   private servedFromCue = false;
 
@@ -196,10 +198,30 @@ export class YouTubeEngine implements PlaybackEngine {
    */
   async cue(handle: string): Promise<void> {
     const player = await this.ensurePlayer();
-    if (this.track) return; // something is already playing; leave it alone
+    if (this.track) {
+      console.info('dot: cue skipped, already holding ' + this.track.id);
+      return; // something is already playing; leave it alone
+    }
     warmConnections();
-    player.cueVideoById({ videoId: handle, suggestedQuality: 'small' });
+
+    // Loaded rather than cued. cueVideoById fetches the thumbnail and prepares
+    // the player but explicitly does not request the media until playVideo is
+    // called — measured here as a settled forty-second cue still costing 6.9s
+    // to start, against 7.2s for no cue at all. Preparing the player was never
+    // the expensive part.
+    //
+    // loadVideoById does fetch it. It also starts playing, which is why the
+    // volume goes to zero first and the state handler pauses it the instant the
+    // media is running.
+    this.preloading = true;
+    try {
+      player.setVolume(0);
+    } catch {
+      /* older players; the pause below still stops it being heard for long */
+    }
+    player.loadVideoById({ videoId: handle, suggestedQuality: 'small' });
     this.cuedHandle = handle;
+    console.info('dot: preloading ' + handle);
   }
 
   prewarm(): void {
@@ -247,6 +269,27 @@ export class YouTubeEngine implements PlaybackEngine {
                 resolve(player);
               },
               onStateChange: (e: { data: number }) => {
+                // A preload is playback the viewer did not ask for, so none of
+                // it is allowed out: no play event, no polling, no sound. The
+                // moment the media is actually running it is paused again —
+                // and a paused player carries on filling its buffer, which is
+                // the whole point. Position is put back to zero so the track
+                // still begins where it should.
+                if (this.preloading) {
+                  if (e.data === YT.PlayerState.PLAYING) {
+                    this.preloading = false;
+                    try {
+                      player.pauseVideo();
+                      player.seekTo(0, true);
+                      player.setVolume(this.pendingVolume);
+                    } catch {
+                      /* nothing useful to do; the real play will sort it out */
+                    }
+                    console.info('dot: preload buffered and paused');
+                  }
+                  return;
+                }
+
                 if (e.data === YT.PlayerState.PLAYING) {
                   this.silenceCaptions();
                   this.startPolling();
@@ -376,14 +419,29 @@ export class YouTubeEngine implements PlaybackEngine {
     // If this is the track that was cued, the player is already holding it and
     // reloading would throw that work away and pay for it twice. Confirmed
     // against the player rather than trusted: the cue may never have landed.
-    const ready =
-      this.cuedHandle === handle && player.getVideoData()?.video_id === handle;
+    const holding = player.getVideoData()?.video_id ?? '(none)';
+    const ready = this.cuedHandle === handle && holding === handle;
+    console.info(
+      'dot: load ' + handle + ' cued=' + (this.cuedHandle ?? '(none)') +
+        ' holding=' + holding + ' -> ' + (ready ? 'REUSE' : 'full load'),
+    );
     this.cuedHandle = null;
     this.servedFromCue = ready;
     if (ready) {
+      // A preload still in flight must stop behaving like one, or the state
+      // handler will pause the track the moment it starts.
+      this.preloading = false;
+      try {
+        player.setVolume(this.pendingVolume);
+      } catch {
+        /* nothing to restore on an older player */
+      }
       this.silenceCaptions();
       return;
     }
+
+    // Whatever was being preloaded is not what was asked for.
+    this.preloading = false;
 
     // A watch screen is a couple of hundred pixels wide and most of this is
     // listened to rather than watched, so the largest stream the player would

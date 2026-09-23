@@ -46,6 +46,59 @@ export interface MirrorStatus {
 const status: MirrorStatus = { active: false, relay: '', lastOkAt: 0, lastError: '', sent: 0 };
 
 /**
+ * The last few things that went wrong, carried in the snapshot.
+ *
+ * Debugging this device otherwise means inferring a crash from a tick counter,
+ * which is guesswork dressed up as evidence. A watch with no console, no USB
+ * and no developer options has no other way to say what threw.
+ *
+ * Bounded, and installed once: a page that is failing repeatedly must not turn
+ * its own error reporting into the reason it runs out of memory.
+ */
+const LOG_MAX = 12;
+const log: string[] = [];
+let logInstalled = false;
+
+function note(kind: string, text: string): void {
+  const line = kind + ': ' + text.slice(0, 200);
+  if (log[log.length - 1] === line) return; // a loop should not fill the buffer
+  log.push(line);
+  while (log.length > LOG_MAX) log.shift();
+}
+
+function installLogging(): void {
+  if (logInstalled) return;
+  logInstalled = true;
+
+  window.addEventListener('error', (e) => {
+    const ev = e as ErrorEvent;
+    note('error', (ev.message ?? 'error') + ' @ ' + (ev.filename ?? '?') + ':' + (ev.lineno ?? 0));
+  });
+  window.addEventListener('unhandledrejection', (e) => {
+    const reason = (e as PromiseRejectionEvent).reason;
+    note('reject', reason instanceof Error ? reason.message : String(reason));
+  });
+
+  // Wrapped rather than replaced, so anything already watching the console
+  // still sees what it saw.
+  const original = console.error;
+  console.error = function (...args: unknown[]): void {
+    note('console', args.map((a) => (a instanceof Error ? a.message : String(a))).join(' '));
+    original.apply(console, args as never[]);
+  };
+
+  // Deliberate diagnostics, marked so they can be picked out of the ordinary
+  // chatter. Anything logged as "dot: ..." is something a decision point was
+  // asked to explain about itself.
+  const info = console.info;
+  console.info = function (...args: unknown[]): void {
+    const text = args.map((a) => String(a)).join(' ');
+    if (text.indexOf('dot:') === 0) note('dot', text.slice(4).trim());
+    info.apply(console, args as never[]);
+  };
+}
+
+/**
  * The bundle this page was loaded with, as the relay reported it on the first
  * tick, and the guard against reloading in a loop.
  *
@@ -86,9 +139,34 @@ export function mirrorStatus(): MirrorStatus {
   return status;
 }
 
+/**
+ * Where everything is scrolled to, written onto the copy being sent.
+ *
+ * Scroll position is not in the markup, so a snapshot of the DOM alone always
+ * redraws at the top however far down the device actually is — which makes a
+ * scrolled screen unreadable from the other end, and scrolling it remotely
+ * pointless. Recorded as an attribute on the elements themselves rather than as
+ * a list of selectors, so nothing has to be matched up again at the far end.
+ */
+const SCROLLERS = '.panes, .onboard, .list, .sheet';
+
+function markScroll(live: HTMLElement, clone: HTMLElement): void {
+  // Only the handful of containers that can actually scroll. This walked every
+  // element in the document twice per tick to begin with, which is a great deal
+  // of work every 800ms on a processor thirty times slower than the one it was
+  // written on, and all of it to find the two or three that ever scroll.
+  const from = live.querySelectorAll(SCROLLERS);
+  const to = clone.querySelectorAll(SCROLLERS);
+  for (let i = 0; i < from.length && i < to.length; i++) {
+    const top = from[i]?.scrollTop ?? 0;
+    if (top > 0) to[i]?.setAttribute('data-mirror-scroll', String(Math.round(top)));
+  }
+}
+
 /** Replaced in the snapshot: cross-origin, unserializable, and large. */
 function stripFrames(root: HTMLElement): string {
   const clone = root.cloneNode(true) as HTMLElement;
+  markScroll(root, clone);
   const live = root.querySelectorAll('iframe');
   const copies = clone.querySelectorAll('iframe');
 
@@ -123,6 +201,7 @@ function text(selector: string): string {
 
 export function startMirror(): void {
   if (location.protocol !== 'http:') return;
+  installLogging();
 
   const relay = 'http://' + location.hostname + ':' + RELAY_PORT;
   status.active = true;
@@ -171,9 +250,16 @@ export function startMirror(): void {
     if (busy) return;
     busy = true;
     try {
-      const html = stripFrames(document.body);
-      const changed = html !== previous;
-      previous = html;
+      // While a track is loading, the device needs every cycle it has: that
+      // window is seven seconds of the player's own work on this hardware, and
+      // serializing the document alongside it both slows the thing being
+      // measured and distorts the measurement. The tick still goes — commands
+      // and the timing readout still flow — it just stops carrying the DOM.
+      const loading = (document.querySelector('.np-loading')?.textContent ?? '').trim().length > 0;
+
+      const html = loading ? '' : stripFrames(document.body);
+      const changed = !loading && html !== previous;
+      if (changed) previous = html;
 
       // An unchanged screen still has to check in. The tick is how commands
       // arrive, and the moment worth sending one is precisely when the device
@@ -187,6 +273,7 @@ export function startMirror(): void {
         body: JSON.stringify({
           html: changed ? html : undefined,
           unchanged: !changed,
+          loading,
           title: document.title,
           width: window.innerWidth,
           height: window.innerHeight,
@@ -197,6 +284,13 @@ export function startMirror(): void {
           // — both look like a gap in the snapshots and only one of them means
           // the device is now running different code.
           sent: status.sent,
+          log: log.length > 0 ? log.slice() : undefined,
+          // Rough memory pressure, where the browser will say. A renderer that
+          // is about to be killed for using too much is otherwise completely
+          // silent about it.
+          mem: (performance as unknown as { memory?: { usedJSHeapSize?: number } }).memory?.usedJSHeapSize,
+          // The page's own scroll, which is not an element's scrollTop.
+          scrollY: window.pageYOffset || document.documentElement.scrollTop || 0,
           ts: Date.now(),
         }),
       });

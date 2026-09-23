@@ -682,6 +682,9 @@ export class App {
         for (const [key, node] of this.surfaceTabs) node.classList.toggle('on', key === kind);
         this.renderHome();
         if (kind === 'short') void this.ensureShorts();
+        // The other surface's first track is now the one most likely to be
+        // tapped, so it is the one worth having ready.
+        this.cueAhead();
       });
       this.surfaceTabs.set(kind, tab);
       seg.appendChild(tab);
@@ -2579,9 +2582,21 @@ export class App {
    * spent staring at a still screen wondering whether the app has hung.
    */
   private cueAhead(): void {
-    if (this.player.track) return;
-    const head = this.queue[0];
-    if (!head || head.track.sourceId !== 'youtube') return;
+    if (this.player.track) {
+      console.info('dot: cueAhead skipped, a track is loaded');
+      return;
+    }
+    // The head of what is on screen, not the head of the queue. The queue
+    // holds both surfaces mixed together and everything hidden, so its first
+    // entry is routinely a Short while the Music feed is showing — which meant
+    // the preload was almost never the track that got tapped, and the one
+    // measure taken against a seven-second wait quietly never applied.
+    const head = this.queueFor(this.surface)[0];
+    if (!head || head.track.sourceId !== 'youtube') {
+      console.info('dot: cueAhead skipped, ' + this.surface + ' head is ' + (head ? head.track.sourceId : 'empty'));
+      return;
+    }
+    console.info('dot: cueAhead for ' + head.track.id + ' (' + this.surface + ')');
     // Resolved the same way the real play resolves it, so the handle the player
     // is cued with is exactly the one it would otherwise be loaded with.
     void this.youtube
