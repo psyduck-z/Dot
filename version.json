@@ -1,7 +1,7 @@
 {
-  "version": "e02caa9",
+  "version": "6009eb9",
   "bundle": "bundle.js",
-  "notes": "Put back the click handlers removed with the crash trigger",
+  "notes": "Fit the feed to the screen it is actually on",
   "apk": "dot.apk",
-  "apkVersion": 80
+  "apkVersion": 81
 }

@@ -105,9 +105,14 @@ body {
   background: linear-gradient(to bottom, #1c1c1c 0%, #000 220px);
 }
 
+/* Measured on the watch: 320x349. Of that, the header, the mini player and the
+   tab bar were taking 250px, leaving room for two rows of a twenty-three track
+   feed. Every value below is chosen against that budget rather than against how
+   it looks on a desktop, where the same layout has three hundred pixels to
+   spare and none of this shows. */
 .pane {
-  padding: 0 16px 24px;
-  padding-top: calc(20px + env(safe-area-inset-top, 0px));
+  padding: 0 16px 20px;
+  padding-top: calc(12px + env(safe-area-inset-top, 0px));
 }
 
 /* ---------------------------------------------------------------- onboarding */
@@ -151,15 +156,17 @@ body {
 /* ------------------------------------------------------------------- content */
 
 .greeting {
-  margin: 0 0 16px;
-  font-size: 25px;
+  margin: 0 0 10px;
+  font-size: 21px;
   font-weight: 800;
   letter-spacing: -0.025em;
 }
 
+/* 22px above and 10px below cost more vertical space than the greeting did,
+   to label a list that is the only thing on the screen. */
 .shelf-title {
-  margin: 22px 0 10px;
-  font-size: 17px;
+  margin: 12px 0 6px;
+  font-size: 15px;
   font-weight: 700;
   letter-spacing: -0.015em;
 }
@@ -464,7 +471,14 @@ body {
 }
 
 /* The one action on the Music screen that needs to be obvious. */
-.endless { margin-bottom: 16px; }
+/* Shorter than a general .primary, which keeps its full height where it is the
+   only thing being asked for. This one shares the screen with the feed it is
+   sitting on top of, and it is full-width, so it stays easy to hit at 42px. */
+.endless {
+  margin-bottom: 10px;
+  min-height: 42px;
+  padding: 10px;
+}
 
 .danger {
   display: block;
@@ -571,7 +585,7 @@ body {
 }
 .tab {
   flex: 1 1 0;
-  min-height: 50px;
+  min-height: 44px;
   padding: 5px 0 7px;
   border: 0;
   background: transparent;
