@@ -1,7 +1,7 @@
 {
-  "version": "9eca272",
+  "version": "22e3668",
   "bundle": "bundle.js",
-  "notes": "Unsquash the Shorts player, refill the feed, and stop corrupting text",
+  "notes": "Stop the next button leaving the music paused and silent",
   "apk": "dot.apk",
-  "apkVersion": 84
+  "apkVersion": 85
 }
