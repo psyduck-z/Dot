@@ -1,7 +1,7 @@
 {
-  "version": "2081b16",
+  "version": "e02caa9",
   "bundle": "bundle.js",
-  "notes": "Stop trying to crash the renderer on purpose; it cannot be done from here",
+  "notes": "Put back the click handlers removed with the crash trigger",
   "apk": "dot.apk",
-  "apkVersion": 79
+  "apkVersion": 80
 }
