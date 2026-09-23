@@ -192,6 +192,11 @@ export function startMirror(): void {
           height: window.innerHeight,
           timing: text('.np-timing'),
           status: text('.np-status'),
+          // Ticks since this page loaded. Resets to zero on a reload, which is
+          // what makes a reload distinguishable from the screen going to sleep
+          // — both look like a gap in the snapshots and only one of them means
+          // the device is now running different code.
+          sent: status.sent,
           ts: Date.now(),
         }),
       });

@@ -288,15 +288,23 @@ class MainActivity : Activity() {
         fun getDevServer(): String = prefs().getString(KEY_DEV_URL, "") ?: ""
 
         /**
-         * Restarts the activity so the new address is picked up.
+         * Loads the app again, at whatever address is now configured.
          *
-         * recreate() rather than reloading the WebView: the address is read in
-         * onCreate, so running it again is what actually applies the setting,
-         * and it leaves no state behind from the origin being left.
+         * This called recreate() first, on the reasoning that onCreate is where
+         * the address is read. On this firmware recreate() does nothing at all:
+         * the page reported "Restarting…", the call was made, and the same page
+         * carried on running — confirmed by its tick counter never resetting.
+         *
+         * Pointing the WebView at the address directly needs no cooperation
+         * from the activity lifecycle and is the same outcome. Whether it is
+         * worth trusting recreate() on a device this heavily modified is not
+         * worth finding out.
          */
         @JavascriptInterface
         fun restartApp() {
-            runOnUiThread { recreate() }
+            val target = prefs().getString(KEY_DEV_URL, null)
+            val url = if (target.isNullOrBlank()) PACKAGED else target
+            runOnUiThread { webView.loadUrl(url) }
         }
 
         /**
