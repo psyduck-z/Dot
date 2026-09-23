@@ -1,7 +1,7 @@
 {
-  "version": "c26970d",
+  "version": "42ec04e",
   "bundle": "bundle.js",
-  "notes": "Show the title cards while a track loads",
+  "notes": "Show a channel's Shorts the way the Shorts tab shows them",
   "apk": "dot.apk",
-  "apkVersion": 92
+  "apkVersion": 93
 }
