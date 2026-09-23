@@ -1,7 +1,7 @@
 {
-  "version": "594da41",
+  "version": "254688b",
   "bundle": "bundle.js",
-  "notes": "Recover from a dead renderer instead of dying with it",
+  "notes": "Try the in-app installer again, on a build that no longer looks like one",
   "apk": "dot.apk",
-  "apkVersion": 77
+  "apkVersion": 78
 }
