@@ -1014,7 +1014,10 @@ export class App {
   /* -------------------------------------------------------------------- search */
 
   private buildSearch(host: HTMLElement): void {
-    host.appendChild(el('h1', 'greeting', 'Search'));
+    // No heading. The tab bar sits four rows below with this pane's name lit
+    // up, so a title here repeats it at 35px plus its margin — on a screen with
+    // 349 of them, where that is most of a row of results. Home keeps its
+    // greeting because "Good evening" is not a label for the pane.
 
     const form = el('form', 'searchbar');
     const input = el('input', 'search-input');
@@ -1250,7 +1253,6 @@ export class App {
 
   /** Things you have collected: liked tracks and the playlists you follow. */
   private buildLibrary(host: HTMLElement): void {
-    host.appendChild(el('h1', 'greeting', 'Your library'));
 
     this.libraryList = el('div', 'list');
     host.appendChild(this.libraryList);
@@ -1530,7 +1532,6 @@ export class App {
   }
 
   private buildSettings(host: HTMLElement): void {
-    host.appendChild(el('h1', 'greeting', 'Settings'));
 
     // Above the collapsed sections, so it is readable without opening
     // anything. This is the number that says whether a slow start is this

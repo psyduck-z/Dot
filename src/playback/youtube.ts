@@ -452,7 +452,12 @@ export class YouTubeEngine implements PlaybackEngine {
     // position yet — on the processor the load is already waiting for. Polling
     // starts again by itself when the player reaches PLAYING.
     this.stopPolling();
-    const player = await this.ensurePlayer();
+
+    // Used directly when it already exists, rather than awaited. Awaiting a
+    // resolved promise still yields, and everything queued behind this call —
+    // the whole Now Playing repaint — would run before the player was told
+    // which video to fetch.
+    const player = this.player ?? (await this.ensurePlayer());
     warmConnections();
 
     // If this is the track that was cued, the player is already holding it and

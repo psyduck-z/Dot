@@ -135,10 +135,16 @@ export class Player {
     this.current = track;
     this.reported = false;
     this.engine.setVolume(this.volume);
-    this.emit((l) => l.onTrackChange?.(track));
 
     try {
-      await this.engine.load(track, handle);
+      // The load is started before the screen is repainted, not after. Painting
+      // Now Playing means fetching full-size artwork, scoring the track's tags
+      // to explain it, and measuring the stage — a forced reflow among them —
+      // and all of it used to happen before the player had been told which
+      // video to fetch. On this hardware that is not a rounding error.
+      const loading = this.engine.load(track, handle);
+      this.emit((l) => l.onTrackChange?.(track));
+      await loading;
       await this.engine.play();
     } catch (err) {
       // Autoplay policy blocks playback until the user has interacted. That is
