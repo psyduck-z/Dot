@@ -936,6 +936,20 @@ body {
   border-radius: 0;
   box-shadow: none;
 }
+/* Over the picture rather than beside it. The stage is as tall as it is allowed
+   to be and the video's width follows from that, so the forty-odd pixels the
+   controls were taking came straight off both dimensions. They sit on the dark
+   band below a portrait video, where there is nothing to cover. */
+.np.shorts .np-controls {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: calc(2px + env(safe-area-inset-bottom, 0px));
+  z-index: 7;
+  margin: 0;
+  padding: 0 16px;
+  background: linear-gradient(to top, rgba(0, 0, 0, 0.72), rgba(0, 0, 0, 0));
+}
 /* Both of these are absolute in Shorts. As flex children they were taking
    height out of the stage, which is what pushed the video up and squashed it.
    The card floats over the picture; the timing sits on the bottom edge. */
@@ -952,17 +966,34 @@ body {
   top: 42%;
   min-height: 0;
 }
+/* Along the top, beside the collapse arrow, where nothing else is.
+   It used to sit on the bottom edge, directly on top of the labels under the
+   control buttons — "Not for me" and "Never" were printed through the middle of
+   it and none of the three could be read. */
 .np.shorts .np-timing {
-  bottom: calc(2px + env(safe-area-inset-bottom, 0px));
+  top: 10px;
+  left: 44px;
+  right: 12px;
+  bottom: auto;
+  text-align: right;
   font-size: 10px;
 }
 
+/* Removed from the layout, not merely made invisible.
+   These two rules had been spliced into one another: the Shorts list ended with
+   a bare `.np.shorts`, a comment, and then the ambient selectors, so all of it
+   became a single rule setting opacity. Transparent elements still take their
+   space, and these were taking 46px of title alone out of a 349px screen —
+   which is why the Shorts video had been squeezed down to 67x119 in the corner.
+   Ambient keeps opacity, because there the point is to darken a layout that
+   must not move. */
 .np.shorts .np-title,
 .np.shorts .np-artist,
 .np.shorts .np-why,
 .np.shorts .np-bar,
-.np.shorts .np-times,
-.np.shorts /* Music playing, nothing touched for a while. Everything but the player goes
+.np.shorts .np-times { display: none; }
+
+/* Music playing, nothing touched for a while. Everything but the player goes
    dark; on an OLED an unlit pixel costs nothing, so this is most of the saving
    available while the screen still has to be on. Tapping brings it back. */
 .np.ambient .np-head,

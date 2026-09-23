@@ -1,7 +1,7 @@
 {
-  "version": "74806ae",
+  "version": "9eca272",
   "bundle": "bundle.js",
-  "notes": "Find the Shorts crash, and stop mistaking reloads for it",
+  "notes": "Unsquash the Shorts player, refill the feed, and stop corrupting text",
   "apk": "dot.apk",
-  "apkVersion": 83
+  "apkVersion": 84
 }
