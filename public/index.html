@@ -625,11 +625,11 @@ body {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  margin-bottom: 8px;
+  margin-bottom: 4px;
 }
 .np-icon {
-  width: 40px;
-  height: 40px;
+  width: 34px;
+  height: 34px;
   border: 0;
   background: transparent;
   color: #fff;
@@ -645,11 +645,17 @@ body {
   text-transform: uppercase;
 }
 
+/* Scaled to the screen rather than fixed at 168px.
+   On the watch that square was 48% of the height, which pushed the controls
+   half off the bottom edge and put "Add to playlist", the loading caption and
+   the timing line past it entirely — reachable only by scrolling the playback
+   screen, to find the play button. The cap keeps it from growing on anything
+   larger. */
 .np-art {
   position: relative;
-  width: 168px;
-  height: 168px;
-  margin: 2px auto 18px;
+  width: min(168px, 34vh);
+  height: min(168px, 34vh);
+  margin: 2px auto 10px;
   border-radius: 8px;
   background-color: #282828;
   box-shadow: 0 10px 34px rgba(0, 0, 0, 0.6);
@@ -837,7 +843,7 @@ body {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  margin-top: 14px;
+  margin-top: 8px;
 }
 /* Three weights, so the row reads at a glance instead of as four equal
    buttons: play is the action, next is navigation, the reactions are asides. */
@@ -1014,10 +1020,18 @@ body {
    moment sound arrives, so it is only ever seen during a wait. Like the timing
    line it is deliberately outside every rule that hides things in Shorts or
    ambient — a wait is exactly when something should be on screen. */
+/* Over the artwork, not under the controls. The captions exist to fill the
+   wait before a track starts, and below the fold they filled nothing. */
 .np-loading {
-  margin: 10px 0 0;
-  min-height: 16px;
+  position: absolute;
+  left: 16px;
+  right: 16px;
+  top: 38%;
+  z-index: 6;
+  margin: 0;
+  min-height: 0;
   text-align: center;
+  pointer-events: none;
 }
 /* The card itself. Empty text means no card, so a fast start shows nothing. */
 .np-loading:not(:empty) {
@@ -1041,13 +1055,49 @@ body {
 /* The start timing, directly under the controls. Deliberately absent from
    every list that hides things in Shorts or ambient — it was written twice
    into elements that were hidden in exactly the cases worth measuring. */
+/* Along the bottom edge rather than in the flow. As a block it sat below the
+   controls, which on the watch put it past the bottom of the screen, where a
+   number nobody can see is the same as no number at all. */
 .np-timing {
-  margin: 8px 0 0;
+  position: absolute;
+  left: 12px;
+  right: 12px;
+  bottom: calc(2px + env(safe-area-inset-bottom, 0px));
+  margin: 0;
   min-height: 14px;
   text-align: center;
   color: #1fd18c;
   font-size: 11px;
   font-variant-numeric: tabular-nums;
+  pointer-events: none;
+}
+
+
+/* ------------------------------------------------- short screens (the watch)
+
+   Measured on the device: 320x349. Now Playing at its ordinary sizes came to
+   about 400px of content, so the play button sat below the bottom edge and the
+   whole playback screen had to be scrolled to reach it. Everything here buys
+   back the ~55px that costs, and applies only where the screen is actually
+   short — a phone or a desktop keeps the roomier layout. */
+@media (max-height: 430px) {
+  .np-art {
+    width: min(168px, 27vh);
+    height: min(168px, 27vh);
+    margin-bottom: 8px;
+  }
+  /* One line. Two lines of a 19px title is 46px, and titles on this feed are
+     long enough that it is nearly always two. */
+  .np-title {
+    font-size: 17px;
+    -webkit-line-clamp: 1;
+  }
+  .np-artist { font-size: 12px; }
+  .np-why { margin-top: 4px; font-size: 10px; }
+  .np-times { font-size: 10px; }
+  .np-controls { margin-top: 4px; }
+  /* Secondary, and the only thing here allowed below the fold. */
+  .np-hide { margin-top: 6px; }
 }
 
 .np-status { display: none; }
@@ -1099,10 +1149,15 @@ body {
   justify-content: center;
   margin: 2px 16px 0;
 }
-/* One row on one axis: the hide action joins the reactions instead of sitting
-   on its own line below them, which gives the video back that height. */
-.np-hide-icon { display: none; }
-.np.shorts .np-hide-icon { display: block; }
+/* One row on one axis: the hide action sits with the reactions rather than on
+   its own line below them, which gives that height back.
+
+   Shown everywhere, not only in Shorts. It used to be Shorts-only because music
+   had a full-width "Don't show this again" button instead — so the two were
+   never really duplicates, they were the same action in two contexts. Removing
+   the text one for being redundant left music with no way to hide a track at
+   all. */
+.np-hide-icon { display: block; }
 .np.shorts .np-hide { display: none; }
 /* Tap the video to play or pause; the player handles that itself.
 
