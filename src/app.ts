@@ -2534,10 +2534,13 @@ export class App {
   }
 
   private showBufferCard(): void {
-    // Nothing is being waited for. A backstop against every path that might
-    // start playing without telling this code to stop: one missed call should
-    // cost a card, not a permanent slideshow over a playing video.
-    if (this.player.playing) {
+    // Nothing is being waited for. startedAt is set when a track is asked for
+    // and cleared the moment one starts, so it is exactly "a start is pending"
+    // — where asking the player whether it is playing is not: tapping a track
+    // while another is running leaves the old one playing until the new one
+    // replaces it, and this read PLAYING and suppressed the cards for the whole
+    // load. They stopped appearing at all.
+    if (this.startedAt <= 0) {
       this.stopLoadingCaptions();
       return;
     }
