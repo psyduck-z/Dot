@@ -18,7 +18,7 @@ import { buildQueue, exploreRate, type RankedTrack } from './reco/queue.ts';
 import { contextBucket, featurize, hashKey, normalizeTag } from './reco/features.ts';
 import * as store from './store.ts';
 import { crashContext, recentCrashes, clearCrashes, crashedRecently, crashedTrackIds } from './crash.ts';
-import { mirrorStatus } from './remote.ts';
+import { mirrorStatus, mirrorEnabled, setMirrorEnabled } from './remote.ts';
 import {
   checkForUpdate,
   isRunningDownloaded,
@@ -1490,19 +1490,41 @@ export class App {
       host.appendChild(dismiss);
     }
 
+    // The switch. Mirroring is worth its cost while someone is watching and
+    // worth nothing when nobody is, and until now the only way to stop paying
+    // for it was to stop using the dev server altogether.
+    const toggle = button('toggle', '');
+    const paintToggle = (): void => {
+      toggle.textContent = mirrorEnabled() ? 'Mirroring: on' : 'Mirroring: off';
+      toggle.classList.toggle('on', mirrorEnabled());
+    };
+    paintToggle();
+    toggle.addEventListener('click', () => {
+      setMirrorEnabled(!mirrorEnabled());
+      paintToggle();
+      paint();
+    });
+    host.appendChild(toggle);
+
     const live = el('p', 'muted', '');
     host.appendChild(live);
     const paint = (): void => {
       const m = mirrorStatus();
-      if (!m.active) {
-        live.textContent = 'Mirroring: off (only runs when loaded from a dev server).';
+      if (!mirrorEnabled()) {
+        live.textContent = 'Switched off. Nothing is being sent.';
         return;
       }
+      if (!m.active) {
+        live.textContent = 'Idle — only runs when Dot is loaded from a dev server.';
+        return;
+      }
+      // The button above already says the word; repeating it here read as two
+      // separate settings rather than a switch and its state.
       const ago = m.lastOkAt ? Math.round((Date.now() - m.lastOkAt) / 1000) : null;
       live.textContent =
         ago === null
-          ? 'Mirroring: no reply yet from ' + m.relay + (m.lastError ? ' — ' + m.lastError : '')
-          : 'Mirroring: ' + m.sent + ' sent, last ' + ago + 's ago → ' + m.relay;
+          ? 'No reply yet from ' + m.relay + (m.lastError ? ' — ' + m.lastError : '')
+          : m.sent + ' sent, last ' + ago + 's ago → ' + m.relay;
     };
     paint();
     // Cleared whenever Settings is rebuilt, so it cannot outlive the element.

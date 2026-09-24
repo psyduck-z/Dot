@@ -155,6 +155,47 @@ export function mirrorStatus(): MirrorStatus {
 }
 
 /**
+ * Whether mirroring is switched on, and the switch itself.
+ *
+ * Costing something is the point of having a switch: the device serializes its
+ * screen and makes a request on every tick, which is worth paying while someone
+ * is looking and worth nothing when they are not. On rather than off by
+ * default, because a development build exists to be watched.
+ *
+ * Off means off — no ticks, no requests, no loop. Turning it back on has to
+ * happen on the device, which is the honest consequence of switching off the
+ * only thing that can be reached remotely.
+ */
+const ENABLED_KEY = 'dot.mirror.on';
+
+export function mirrorEnabled(): boolean {
+  try {
+    return window.localStorage.getItem(ENABLED_KEY) !== 'off';
+  } catch {
+    return true;
+  }
+}
+
+/** Set from Settings. Takes effect at once, in both directions. */
+export function setMirrorEnabled(on: boolean): void {
+  try {
+    window.localStorage.setItem(ENABLED_KEY, on ? 'on' : 'off');
+  } catch {
+    /* no storage: it holds for this session only */
+  }
+  if (on) {
+    if (!running) startMirror();
+  } else {
+    running = false;
+    status.active = false;
+    console.info('dot: mirroring off');
+  }
+}
+
+/** Guards against a second loop when it is switched on again. */
+let running = false;
+
+/**
  * Where everything is scrolled to, written onto the copy being sent.
  *
  * Scroll position is not in the markup, so a snapshot of the DOM alone always
@@ -216,6 +257,12 @@ function text(selector: string): string {
 
 export function startMirror(): void {
   if (location.protocol !== 'http:') return;
+  if (!mirrorEnabled()) {
+    console.info('dot: mirroring is switched off in Settings');
+    return;
+  }
+  if (running) return;
+  running = true;
   installLogging();
 
   const relay = 'http://' + location.hostname + ':' + RELAY_PORT;
@@ -419,7 +466,9 @@ export function startMirror(): void {
   // is actually happening. Immediately for the first one: the sooner the bundle
   // stamp is known, the smaller the window in which a rebuild lands unnoticed.
   const loop = (): void => {
+    if (!running) return; // switched off; the loop ends rather than idles
     void tick().then(() => {
+      if (!running) return;
       window.setTimeout(loop, idle >= IDLE_AFTER ? IDLE_TICK_MS : TICK_MS);
     });
   };
