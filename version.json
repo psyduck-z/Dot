@@ -1,7 +1,7 @@
 {
-  "version": "53fc3e1",
+  "version": "7169fa1",
   "bundle": "bundle.js",
-  "notes": "Put mirroring on a switch",
+  "notes": "Make the switch turn off the whole arrangement, not just the mirror",
   "apk": "dot.apk",
-  "apkVersion": 98
+  "apkVersion": 99
 }
