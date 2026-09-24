@@ -206,11 +206,18 @@ function portOf(url: string): string {
 /**
  * How long to leave the device alone before preloading anything.
  *
- * Long enough for the feed to have rendered and its images to have settled.
- * The preload is worth several seconds off the first play, but only if the
- * device survives to collect them.
+ * Four seconds was not long enough by a wide margin. The watch reached the
+ * fifth or sixth tick after startup and stopped answering — every launch,
+ * which is what "it works on mobile data and not at home" turned out to mean,
+ * since on mobile data the dev server is unreachable and the app it falls back
+ * to is doing the same thing. Disabling the preload brought it straight back:
+ * stuck at tick 3 for a hundred seconds, then ticking steadily to 19.
+ *
+ * Twenty-five seconds instead, and only while nothing else is going on. The
+ * preload is worth four seconds off the first play and nothing at all if the
+ * device is wedged when the play arrives.
  */
-const CUE_DELAY_MS = 4000;
+const CUE_DELAY_MS = 25000;
 
 /**
  * How far back "already played" reaches when filling the feed.
