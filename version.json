@@ -1,7 +1,7 @@
 {
-  "version": "d50bcd7",
+  "version": "bc81a4c",
   "bundle": "bundle.js",
-  "notes": "Stop suppressing the title cards on the previous track still playing",
+  "notes": "Swipe down to shrink the player, sideways to throw it away",
   "apk": "dot.apk",
-  "apkVersion": 95
+  "apkVersion": 96
 }
