@@ -1,7 +1,7 @@
 {
-  "version": "797fa1d",
+  "version": "227e2bc",
   "bundle": "bundle.js",
-  "notes": "Stop the preload landing on top of startup",
+  "notes": "Start preloading when the screen is touched, not on a timer",
   "apk": "dot.apk",
-  "apkVersion": 100
+  "apkVersion": 101
 }
