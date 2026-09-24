@@ -1,7 +1,7 @@
 {
-  "version": "7a486d6",
+  "version": "d50bcd7",
   "bundle": "bundle.js",
-  "notes": "Stop the title cards when the video starts",
+  "notes": "Stop suppressing the title cards on the previous track still playing",
   "apk": "dot.apk",
-  "apkVersion": 94
+  "apkVersion": 95
 }
