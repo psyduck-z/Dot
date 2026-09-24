@@ -220,6 +220,15 @@ function portOf(url: string): string {
 const CUE_DELAY_MS = 25000;
 
 /**
+ * How long after the first touch to start preloading.
+ *
+ * Someone scrolling the feed has an app that has finished starting and is
+ * about to be tapped — both of the things a blind timer was guessing at. Short,
+ * because the point is to be ready before the tap comes.
+ */
+const CUE_AFTER_TOUCH_MS = 1800;
+
+/**
  * How far back "already played" reaches when filling the feed.
  *
  * Every track ever played used to be excluded — the whole history, eight
@@ -426,6 +435,8 @@ export class App {
   private devTimer = 0;
   /** Defers the preload until the app has stopped being busy. */
   private cueTimer = 0;
+  /** Set once the screen has been touched, so preloading can stop guessing. */
+  private touched = false;
   /** Width the Shorts stage is already set to; 0 when it is not in use. */
   private shortsStageWidth = 0;
   private handedOffAt = 0;
@@ -3098,9 +3109,33 @@ export class App {
       // the middle of that is what took the whole renderer down with it.
       window.clearTimeout(this.cueTimer);
       this.cueTimer = window.setTimeout(() => this.cueAhead(), CUE_DELAY_MS);
+      // And sooner than that if someone is actually here.
+      this.armPreloadOnTouch();
     } finally {
       this.refilling = false;
     }
+  }
+
+  /**
+   * Brings the preload forward to the first touch.
+   *
+   * The fixed delay has to assume the worst — that the app is still starting,
+   * which is when a video download wedged the device — so it was set to
+   * twenty-five seconds, and anyone who opened Dot and tapped a track got no
+   * preload at all and the full cold start. A touch says both of the things
+   * that timer was guessing at: startup is over, and a tap is coming.
+   */
+  private armPreloadOnTouch(): void {
+    const once = (): void => {
+      if (this.touched) return;
+      this.touched = true;
+      window.clearTimeout(this.cueTimer);
+      this.cueTimer = window.setTimeout(() => this.cueAhead(), CUE_AFTER_TOUCH_MS);
+    };
+    this.root.addEventListener('touchstart', once, { passive: true, once: true });
+    this.root.addEventListener('scroll', once, { passive: true, once: true, capture: true });
+    // A desktop browser has neither, so the feed is still testable there.
+    this.root.addEventListener('mousedown', once, { once: true });
   }
 
   /**
