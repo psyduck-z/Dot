@@ -1,7 +1,7 @@
 {
-  "version": "bc81a4c",
+  "version": "a5fc8f6",
   "bundle": "bundle.js",
-  "notes": "Swipe down to shrink the player, sideways to throw it away",
+  "notes": "Stop the development tooling being the reason the app is slow",
   "apk": "dot.apk",
-  "apkVersion": 96
+  "apkVersion": 97
 }
