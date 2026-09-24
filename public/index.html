@@ -502,6 +502,11 @@ body {
   position: relative;
   display: flex;
   align-items: center;
+  /* Springs back when a sideways swipe is not carried through, and carries on
+     off the edge when it is. Removed while a finger is on it, so the bar
+     tracks the finger rather than lagging behind it. */
+  transition: transform 0.18s ease, opacity 0.18s ease;
+  touch-action: pan-y;
   margin: 0 8px 4px;
   padding: 7px 8px;
   border-radius: 7px;

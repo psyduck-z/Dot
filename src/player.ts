@@ -177,6 +177,21 @@ export class Player {
   }
 
   /**
+   * Stops, and forgets what was playing.
+   *
+   * Nothing is reported: dismissing the player is not a judgement on the
+   * track, so it must not reach the model as a skip. Distinct from pause(),
+   * which leaves the track loaded and the session going.
+   */
+  stop(): void {
+    this.reported = true;
+    this.current = null;
+    this.engine.stop();
+    this.emit((l) => l.onTrackChange?.(null));
+    this.emit((l) => l.onStateChange?.(false));
+  }
+
+  /**
    * Starts playing again, whatever state it is in.
    *
    * Distinct from toggle(), which would stop a track that is already running.

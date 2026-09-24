@@ -232,6 +232,9 @@ function recentlyPlayed(): TrackId[] {
   return store.loadHistory().slice(-RECENT_PLAY_WINDOW);
 }
 
+/** How far the bar has to travel sideways before it is let go. */
+const MINI_DISMISS_PX = 90;
+
 /** Must match the rail width in the stylesheet. */
 const RAIL_WIDTH = 62;
 /** The only sections long enough to be worth hiding. */
@@ -2176,6 +2179,8 @@ export class App {
     this.np.appendChild(this.npStatus);
 
     this.attachShortsSwipe();
+    this.attachCollapseSwipe();
+    this.attachMiniDismiss();
     window.addEventListener('resize', () => this.fitShortsStage());
     this.attachDimTap();
     this.applyBrightness();
@@ -2236,6 +2241,122 @@ export class App {
         void this.previousShort();
       }
     });
+  }
+
+  /**
+   * Swipe down on the full player to shrink it back to the bar.
+   *
+   * Only from the top of the overlay, so a swipe that is meant to scroll the
+   * screen still scrolls it, and never in Shorts, where a vertical swipe
+   * already means something else.
+   */
+  private attachCollapseSwipe(): void {
+    let startY = 0;
+    let fromTop = false;
+
+    this.np.addEventListener(
+      'touchstart',
+      (e: TouchEvent) => {
+        fromTop =
+          this.np.classList.contains('open') &&
+          !this.np.classList.contains('shorts') &&
+          this.np.scrollTop <= 2;
+        startY = e.touches[0]?.clientY ?? 0;
+      },
+      { passive: true },
+    );
+
+    this.np.addEventListener(
+      'touchend',
+      (e: TouchEvent) => {
+        if (!fromTop) return;
+        fromTop = false;
+        const travel = (e.changedTouches[0]?.clientY ?? startY) - startY;
+        if (travel > 70) this.closeNowPlaying();
+      },
+      { passive: true },
+    );
+  }
+
+  /**
+   * Throw the bar off either edge to stop playing altogether.
+   *
+   * Sideways rather than down, because down already means "shrink". It follows
+   * the finger so the gesture is visible, and past a third of the width it
+   * keeps going and takes the track with it — which matters most on the long
+   * mixes, where the alternative is waiting out a load nobody wants any more.
+   */
+  private attachMiniDismiss(): void {
+    let startX = 0;
+    let startY = 0;
+    let tracking = false;
+
+    this.miniBar.addEventListener(
+      'touchstart',
+      (e: TouchEvent) => {
+        tracking = true;
+        startX = e.touches[0]?.clientX ?? 0;
+        startY = e.touches[0]?.clientY ?? 0;
+        this.miniBar.style.transition = 'none';
+      },
+      { passive: true },
+    );
+
+    this.miniBar.addEventListener(
+      'touchmove',
+      (e: TouchEvent) => {
+        if (!tracking) return;
+        const dx = (e.touches[0]?.clientX ?? startX) - startX;
+        const dy = (e.touches[0]?.clientY ?? startY) - startY;
+        // Sideways only. A finger travelling mostly downward is scrolling.
+        if (Math.abs(dy) > Math.abs(dx)) return;
+        this.miniBar.style.transform = 'translateX(' + Math.round(dx) + 'px)';
+        this.miniBar.style.opacity = String(Math.max(0.25, 1 - Math.abs(dx) / 200));
+      },
+      { passive: true },
+    );
+
+    this.miniBar.addEventListener(
+      'touchend',
+      (e: TouchEvent) => {
+        if (!tracking) return;
+        tracking = false;
+        const dx = (e.changedTouches[0]?.clientX ?? startX) - startX;
+        this.miniBar.style.transition = '';
+
+        if (Math.abs(dx) > MINI_DISMISS_PX) {
+          this.miniBar.style.transform = 'translateX(' + (dx > 0 ? 420 : -420) + 'px)';
+          this.miniBar.style.opacity = '0';
+          window.setTimeout(() => this.dismissPlayback(), 180);
+          return;
+        }
+        // Not far enough: put it back.
+        this.miniBar.style.transform = '';
+        this.miniBar.style.opacity = '';
+      },
+      { passive: true },
+    );
+  }
+
+  /**
+   * Stops everything to do with the current track.
+   *
+   * The load is abandoned as well as the playback — a two-hour mix that is
+   * still fetching is exactly what this gesture is for, and leaving the title
+   * cards running over a dismissed player would be worse than not having them.
+   */
+  private dismissPlayback(): void {
+    this.stopLoadingCaptions();
+    this.startedAt = 0;
+    this.handedOffAt = 0;
+    this.player.stop();
+    this.closeNowPlaying();
+
+    this.miniBar.hidden = true;
+    this.miniBar.style.transform = '';
+    this.miniBar.style.opacity = '';
+    this.root.classList.remove('has-mini');
+    this.renderHome();
   }
 
   /**
@@ -2549,15 +2670,36 @@ export class App {
     if (!name) return;
     this.bufferAt++;
 
-    this.npBuffer.src = 'buffer/images/' + name + '.png';
-    this.npBuffer.hidden = false;
+    // The picture is fetched now and shown later. Decoding it takes long enough
+    // on this hardware to be seen, and a card that appears before its line
+    // starts reads as a caption with a delayed voiceover rather than one
+    // sentence — the voice has to lead.
+    const art = 'buffer/images/' + name + '.png';
+    const warm = new Image();
+    warm.src = art;
 
     // A new element per card. Reusing one and swapping src leaves the old
     // decode attached on this WebView, and a stale 'ended' can then fire
     // against the wrong card.
     this.stopBufferVoice();
     const voice = new Audio('buffer/voices/' + name + '.mp3');
+    voice.preload = 'auto';
     this.bufferVoice = voice;
+
+    // Shown when the recording is actually running, not when it is asked to.
+    let revealed = false;
+    const reveal = (): void => {
+      if (revealed || this.bufferVoice !== voice) return;
+      revealed = true;
+      this.npBuffer.src = art;
+      this.npBuffer.hidden = false;
+    };
+    voice.addEventListener('playing', reveal);
+    voice.addEventListener('play', reveal);
+    // Silent devices and blocked audio still get the card; the picture carries
+    // the joke on its own. Long enough that the voice wins whenever it can.
+    voice.addEventListener('error', reveal);
+    window.setTimeout(reveal, 800);
 
     const next = (): void => {
       if (this.bufferVoice !== voice) return; // superseded, or already stopped

@@ -215,6 +215,7 @@ export function startMirror(): void {
     click?: string;
     text?: string;
     reload?: boolean;
+    swipe?: { sel?: string; dx?: number; dy?: number };
     scroll?: { sel?: string; top?: number };
   }): void => {
     try {
@@ -239,6 +240,40 @@ export function startMirror(): void {
             el.click();
             break;
           }
+        }
+      }
+
+      // Synthetic touches, so a gesture can be tested from here at all. The
+      // device has no other way to be swiped remotely, and a gesture nobody can
+      // try is a gesture nobody has checked.
+      if (command.swipe) {
+        const target = document.querySelector(command.swipe.sel ?? 'body');
+        if (target instanceof HTMLElement) {
+          const box = target.getBoundingClientRect();
+          const x0 = box.left + box.width / 2;
+          const y0 = box.top + box.height / 2;
+          const dx = command.swipe.dx ?? 0;
+          const dy = command.swipe.dy ?? 0;
+
+          const at = (x: number, y: number): Touch =>
+            new Touch({ identifier: 1, target, clientX: x, clientY: y });
+          const fire = (type: string, touch: Touch): void => {
+            target.dispatchEvent(
+              new TouchEvent(type, {
+                touches: type === 'touchend' ? [] : [touch],
+                changedTouches: [touch],
+                bubbles: true,
+                cancelable: true,
+              }),
+            );
+          };
+
+          fire('touchstart', at(x0, y0));
+          // A few steps, so anything watching touchmove sees the travel.
+          for (let i = 1; i <= 4; i++) {
+            fire('touchmove', at(x0 + (dx * i) / 4, y0 + (dy * i) / 4));
+          }
+          fire('touchend', at(x0 + dx, y0 + dy));
         }
       }
 
@@ -338,7 +373,14 @@ export function startMirror(): void {
       }
 
       for (const command of reply.commands ?? []) {
-        apply(command as { click?: string; text?: string; reload?: boolean });
+        apply(
+          command as {
+            click?: string;
+            text?: string;
+            reload?: boolean;
+            swipe?: { sel?: string; dx?: number; dy?: number };
+          },
+        );
       }
       // A command changes the screen, so the next tick must send it.
       if ((reply.commands ?? []).length > 0) previous = '';
