@@ -1,7 +1,7 @@
 {
-  "version": "a5fc8f6",
+  "version": "53fc3e1",
   "bundle": "bundle.js",
-  "notes": "Stop the development tooling being the reason the app is slow",
+  "notes": "Put mirroring on a switch",
   "apk": "dot.apk",
-  "apkVersion": 97
+  "apkVersion": 98
 }
