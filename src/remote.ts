@@ -22,6 +22,17 @@
 import { recentCrashes } from './crash.ts';
 
 const TICK_MS = 800;
+/**
+ * What the tick slows to when nothing on screen has changed.
+ *
+ * A watch left sitting on a feed was being asked to serialize its document and
+ * make a request every 800ms indefinitely. That is a constant tax on the
+ * processor everything else here is starved of, paid to re-send a screen nobody
+ * is changing.
+ */
+const IDLE_TICK_MS = 3200;
+/** How many unchanging ticks before backing off. */
+const IDLE_AFTER = 5;
 const RELAY_PORT = 5175;
 /**
  * Floor between self-reloads.
@@ -109,6 +120,8 @@ function installLogging(): void {
  * against Date.now() here would either reload constantly or never.
  */
 let knownBundle = 0;
+/** Consecutive ticks with nothing to report, for backing off the rate. */
+let idle = 0;
 
 /**
  * When this page last reloaded itself, kept where a reload cannot reach it.
@@ -308,6 +321,8 @@ export function startMirror(): void {
       const html = loading && !peek ? '' : stripFrames(document.body);
       const changed = (!loading || peek) && html !== previous;
       if (changed) previous = html;
+      // Anything happening keeps it responsive; a still screen lets it rest.
+      idle = changed || loading ? 0 : idle + 1;
 
       // An unchanged screen still has to check in. The tick is how commands
       // arrive, and the moment worth sending one is precisely when the device
@@ -361,7 +376,14 @@ export function startMirror(): void {
       if (stamp > 0) {
         if (knownBundle === 0) {
           knownBundle = stamp;
-        } else if (stamp !== knownBundle && Date.now() - lastReloadAt() > RELOAD_GUARD_MS) {
+        } else if (
+          stamp !== knownBundle &&
+          Date.now() - lastReloadAt() > RELOAD_GUARD_MS &&
+          // Never in the middle of getting a track going. Reloading then throws
+          // away the load in progress and starts the whole wait again, which
+          // from the outside is indistinguishable from the app being broken.
+          !loading
+        ) {
           // knownBundle is deliberately left alone: if the guard blocks this,
           // the difference is still there next tick and the reload happens as
           // soon as the window passes, rather than being forgotten.
@@ -393,9 +415,14 @@ export function startMirror(): void {
     }
   };
 
-  // Immediately, not after the first interval: the sooner the bundle stamp is
-  // known, the smaller the window in which a rebuild can land unnoticed.
-  void tick();
-  window.setInterval(() => void tick(), TICK_MS);
+  // Self-scheduling rather than a fixed interval, so the rate can follow what
+  // is actually happening. Immediately for the first one: the sooner the bundle
+  // stamp is known, the smaller the window in which a rebuild lands unnoticed.
+  const loop = (): void => {
+    void tick().then(() => {
+      window.setTimeout(loop, idle >= IDLE_AFTER ? IDLE_TICK_MS : TICK_MS);
+    });
+  };
+  loop();
   console.info('mirror: reporting to ' + relay);
 }

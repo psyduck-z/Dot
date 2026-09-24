@@ -2713,6 +2713,7 @@ export class App {
     void voice
       .play()
       .then(() => {
+        console.info('dot: voice ' + name + ' playing');
         // play() resolves after the fact, so a card stopped while it was still
         // starting would begin anyway — a recording talking over a video that
         // had already started.
@@ -2724,8 +2725,13 @@ export class App {
           }
         }
       })
-      .catch(() => {
-        // Blocked or unplayable: the picture still carries the joke.
+      .catch((err: unknown) => {
+        // Blocked or unplayable: the picture still carries the joke. Named,
+        // because a silent card is exactly what was reported and there is no
+        // other way to find out which of the two it was.
+        console.info(
+          'dot: voice ' + name + ' failed — ' + (err instanceof Error ? err.name + ': ' + err.message : String(err)),
+        );
       });
   }
 
