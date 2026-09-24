@@ -1490,21 +1490,41 @@ export class App {
       host.appendChild(dismiss);
     }
 
-    // The switch. Mirroring is worth its cost while someone is watching and
-    // worth nothing when nobody is, and until now the only way to stop paying
-    // for it was to stop using the dev server altogether.
-    const toggle = button('toggle', '');
-    const paintToggle = (): void => {
-      toggle.textContent = mirrorEnabled() ? 'Mirroring: on' : 'Mirroring: off';
-      toggle.classList.toggle('on', mirrorEnabled());
-    };
-    paintToggle();
-    toggle.addEventListener('click', () => {
-      setMirrorEnabled(!mirrorEnabled());
-      paintToggle();
-      paint();
-    });
+    // One switch for the whole arrangement, not just for the mirror.
+    //
+    // Stopping the mirror alone still left the app being fetched from a laptop
+    // over wifi, and still left it reloading itself whenever that laptop
+    // rebuilt — which is most of what made it feel worse at home than it did
+    // out on mobile data, where the laptop is unreachable and the watch quietly
+    // runs its own copy. Off now means exactly that copy.
+    const on = mirrorEnabled() && location.protocol === 'http:';
+    const toggle = button('toggle', on ? 'Mirroring: on' : 'Mirroring: off');
+    toggle.classList.toggle('on', on);
     host.appendChild(toggle);
+    host.appendChild(
+      el(
+        'p',
+        'muted',
+        on
+          ? 'Running from this machine, and reporting to it. Turning this off returns to the copy installed on the watch.'
+          : 'Running the installed copy. Turning this on loads Dot from ' + DEV_HOST + ' and reports back.',
+      ),
+    );
+
+    toggle.addEventListener('click', () => {
+      if (!native?.setDevServer) {
+        // No shell to restart into: the mirror is all there is to switch.
+        setMirrorEnabled(!mirrorEnabled());
+        this.show('settings');
+        return;
+      }
+      setMirrorEnabled(!on);
+      // Empty address means the packaged app; a real one means this machine.
+      native.setDevServer(on ? '' : devUrlFrom(portOf(native.getDevServer?.() ?? '') || DEV_PORT));
+      native.setReturnTo?.('development');
+      toggle.textContent = on ? 'Switching to the installed copy…' : 'Loading from ' + DEV_HOST + '…';
+      window.setTimeout(() => native.restartApp?.(), 250);
+    });
 
     const live = el('p', 'muted', '');
     host.appendChild(live);
@@ -1598,18 +1618,9 @@ export class App {
     });
     host.appendChild(save);
 
-    // One tap to go back, because the alternative is clearing a text field with
-    // a watch keyboard, and someone whose dev server is down needs this to be
-    // the easy path rather than the fiddly one.
-    const revert = button('toggle', 'Use the installed copy');
-    revert.addEventListener('click', () => {
-      native.setDevServer?.('');
-      native.setReturnTo?.('development');
-      state.textContent = 'Reverting…';
-      if (native.restartApp) window.setTimeout(() => native.restartApp?.(), 250);
-      else state.textContent = 'Saved. Close and reopen Dot to use the installed copy.';
-    });
-    host.appendChild(revert);
+    // No separate "use the installed copy" button: the switch above is that,
+    // and two controls for one decision is how someone ends up with mirroring
+    // off and the app still being served from a laptop.
 
     host.appendChild(state);
   }
