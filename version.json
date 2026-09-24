@@ -1,7 +1,7 @@
 {
-  "version": "7169fa1",
+  "version": "797fa1d",
   "bundle": "bundle.js",
-  "notes": "Make the switch turn off the whole arrangement, not just the mirror",
+  "notes": "Stop the preload landing on top of startup",
   "apk": "dot.apk",
-  "apkVersion": 99
+  "apkVersion": 100
 }
