@@ -15,3 +15,4 @@ dependencyResolutionManagement {
 rootProject.name = "Dot"
 include(":app")
 include(":probe")
+include(":ytfast")
