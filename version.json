@@ -1,7 +1,7 @@
 {
-  "version": "227e2bc",
+  "version": "b8bc3a9",
   "bundle": "bundle.js",
-  "notes": "Start preloading when the screen is touched, not on a timer",
+  "notes": "Add YT Fast, a leaner rebuild of the watch's \"YouTube Lite\"",
   "apk": "dot.apk",
-  "apkVersion": 101
+  "apkVersion": 102
 }
