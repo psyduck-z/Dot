@@ -461,10 +461,22 @@ export class YouTubeSource implements MusicSource {
     const items = (payload as { items?: YtVideo[] } | null)?.items;
     if (!Array.isArray(items)) return [];
 
-    const out: Track[] = [];
+    // Returned in the order the caller asked for, not the order the API felt
+    // like. `videos.list` makes no promise about matching the `id` parameter,
+    // and the order it was given came from `search.list` — which is the only
+    // relevance signal there is. Losing it meant searching for one named song
+    // put it somewhere in the middle of forty results, with no way to tell
+    // why, because every result was legitimately related to the query.
+    const byId = new Map<string, Track>();
     for (const item of items) {
       const track = toTrack(item);
-      if (track && this.playable(track)) out.push(track);
+      if (track && this.playable(track)) byId.set(videoIdOf(track.id), track);
+    }
+
+    const out: Track[] = [];
+    for (const id of ids.slice(0, 50)) {
+      const track = byId.get(id);
+      if (track) out.push(track);
     }
     return out;
   }
@@ -483,8 +495,20 @@ export class YouTubeSource implements MusicSource {
     const cached = store.cacheGet<Track[]>(cacheKey, SEARCH_TTL_MS);
     if (cached) return this.applyFilter(cached).slice(0, limit);
 
+    // videoEmbeddable and videoSyndicated cost nothing — quota is charged per
+    // call — and they ask YouTube to leave out exactly what this app cannot
+    // play: uploads whose owner has disabled embedding, and uploads not
+    // licensed to play outside youtube.com.
+    //
+    // Worth it because the alternative is discarding them here. `playable`
+    // already drops them, but only after they have been bought: the fifty
+    // results a search pays for were being thinned locally, so a search for one
+    // named recording could come back short, or miss it entirely, with the
+    // hundred units spent either way. Filtering at the source spends the same
+    // hundred on fifty results that can actually be played.
     const payload = await this.getJson(
-      `/search?part=snippet&type=video&maxResults=50&q=${encodeURIComponent(query)}`,
+      `/search?part=snippet&type=video&videoEmbeddable=true&videoSyndicated=true` +
+        `&maxResults=50&q=${encodeURIComponent(query)}`,
       COST_SEARCH,
     );
     const items = (payload as { items?: YtVideo[] } | null)?.items;

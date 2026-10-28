@@ -1167,17 +1167,58 @@ export class App {
     clear(results);
 
     if (found.length === 0) {
-      // A quota or key failure looks exactly like "no results" otherwise.
+      // Three different problems used to print the same four words.
+      //
+      // Without a key, `search` never reaches the API at all — it falls back to
+      // matching against tracks already known locally, which on a fresh install
+      // is nothing. No request was made, so there is no key error to report
+      // either, and the screen said "Nothing found." That is true of the local
+      // catalogue and useless as an explanation: searching for a chart single
+      // and being told it does not exist reads as a broken search, and the one
+      // thing that would fix it is never mentioned.
+      if (!this.youtube.configured) {
+        results.appendChild(
+          el('p', 'empty', 'No YouTube key yet, so this only searched tracks already saved here.'),
+        );
+        const go = button('primary', 'Add a key in Settings');
+        go.addEventListener('click', () => this.show('settings'));
+        results.appendChild(go);
+        return;
+      }
+
+      // A quota or key failure looks exactly like "no results" otherwise. The
+      // commonest by far is the daily allowance: one search costs a hundred of
+      // ten thousand units, so a hundred searches in a day is the whole budget.
       const problem = this.youtube.lastKeyProblem;
-      results.appendChild(el('p', 'empty', problem ?? 'Nothing found.'));
+      if (problem) {
+        results.appendChild(el('p', 'empty', problem));
+        const go = button('primary', 'Check the key in Settings');
+        go.addEventListener('click', () => this.show('settings'));
+        results.appendChild(go);
+        return;
+      }
+
+      results.appendChild(el('p', 'empty', 'Nothing found.'));
       return;
     }
 
     const bucket = contextBucket();
+    // Relevance order, left exactly as the API returned it.
+    //
+    // These used to be sorted by the taste model, which is the right thing for
+    // the endless feed and the wrong thing here. Someone searching "bye bye bye
+    // nsync" is not asking what they might enjoy — they have named a recording
+    // and want that recording. Scoring forty legitimately related results by
+    // learned preference reliably pushed the actual answer down the list, and
+    // it looked like a search bug with no bad result to point at, because every
+    // result really was about the thing searched for.
+    //
+    // The score is still computed: it explains a track on the Now Playing
+    // screen and feeds the model the context it was chosen under. It just no
+    // longer decides the order.
     const ranked = found
       .filter((track) => !this.hidden.has(track.id))
-      .map((track) => ({ track, score: this.model.score(featurize(track, bucket)), explored: false }))
-      .sort((a, b) => b.score - a.score);
+      .map((track) => ({ track, score: this.model.score(featurize(track, bucket)), explored: false }));
 
     this.searchResults = ranked;
     this.paintSearchResults(results);
