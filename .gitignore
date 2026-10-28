@@ -439,6 +439,8 @@ android/app/src/main/assets/
 android/.gradle/
 android/build/
 android/app/build/
+# Per-module Gradle build outputs (probe, ytfast, any future module).
+android/*/build/
 android/local.properties
 
 # Downloaded CI artifacts. Rebuildable; never source.
@@ -449,3 +451,6 @@ dist-apk/
 
 # Linked sourcemap for the dev build; never committed.
 public/bundle.js.map
+
+# Third-party APKs pulled from the watch for analysis. Large, not ours, never source.
+vendor-apks/
